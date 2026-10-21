@@ -60,7 +60,7 @@ export function Header({ title, sub, logo, status, tabs, current, onTab, right }
           <div className="row">{right}{status}</div>
         </div>
         {tabs && (
-          <nav className="tabs" aria-label="Sections">
+          <nav className="tabs" aria-label="Sections" data-tour="tabs">
             {tabs.map(([k, label]) => <button key={k} type="button" aria-current={current === k ? 'page' : 'false'} onClick={() => onTab(k)}>{label}</button>)}
           </nav>
         )}

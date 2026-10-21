@@ -11,6 +11,9 @@ import { ConfirmButton, CopyField, Header, LiveBadge, Loading, fmtDate, useHashT
 import SettingsForm from '../components/SettingsForm.jsx';
 import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
+import { Checklist, HelpButton, Tip, Tour, useTour } from '../components/Guide.jsx';
+
+const flag = { get: (k) => { try { return localStorage.getItem(k) === '1'; } catch { return false; } }, set: (k) => { try { localStorage.setItem(k, '1'); } catch { /* ignore */ } } };
 
 const origin = () => window.location.origin;
 const playerUrl = (token) => `${origin()}/p/${token}`;
@@ -33,25 +36,51 @@ export default function EventAdmin() {
     supabase.from('club_members').select('user_id').eq('club_id', d.event.club_id).eq('user_id', session.user.id).then(({ data }) => setIsClubAdmin(!!data?.length));
   }, [session, d.event?.club_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const tour = useTour('eventadmin', !!d.event && isRealUser(session));
+  const [, bump] = useState(0);
+
   if (session === undefined || d.loading) return <Loading />;
   if (!isRealUser(session)) return <Navigate to={`/login?next=/admin/event/${eventId}`} replace />;
   if (!d.event) return <main><div className="wrap"><div className="card"><div className="empty"><b>Event not found</b>You may not have access to it. <Link to="/admin">Back to my events</Link></div></div></div></main>;
   const ev = d.event;
   const pending = d.players.filter((p) => p.status === 'pending').length;
   const issues = E.issues().filter((x) => x.kind === 'dispute' || x.kind === 'check').length;
+  const active = d.players.filter((p) => p.status === 'active');
+  const teamFmt = E.isTeam;
+  const grouped = active.length > 0 && active.every((p) => p.grp > 0);
+  const sent = flag.get('linksSent:' + ev.id);
+  const checklist = [
+    { key: 'setup', label: 'Check the format and rules', hint: `${FORMATS[ev.format].label}: allowance, divisions, countback and how disagreements are handled. Press Save setup when happy.`, done: !!ev.settings?.reviewed, action: { label: 'Open Setup', onClick: () => go('setup') } },
+    { key: 'brand', label: 'Add the company logo and sponsors', hint: 'Shown on phones, the leaderboard, the TV and the PDF.', done: !!ev.logo_url || (ev.sponsors || []).length > 0, optional: true, action: { label: 'Add logos', onClick: () => go('brand') } },
+    { key: 'players', label: 'Add the players', hint: 'One by one, or import an Excel or CSV list.', done: active.length > 0, action: { label: 'Add players', onClick: () => go('players') } },
+    { key: 'groups', label: ev.format === 'betterball' ? 'Put players into four-balls and pairs' : 'Put players into four-balls', hint: teamFmt ? 'Required for team formats: everyone in the same group number plays as one team.' : 'Players mark the others in their group, so give each four-ball the same group number.', done: grouped, action: { label: 'Set groups', onClick: () => go('players') } },
+    { key: 'links', label: 'Send players their personal links', hint: 'WhatsApp, email or a printed QR sheet. Each link opens that player\'s own scorecard.', done: sent, action: { label: 'Open Links & QR', onClick: () => go('links') } },
+    { key: 'live', label: 'Open scoring on the day', hint: 'Until then the event is a private draft and nobody can enter scores.', done: ev.status !== 'draft', action: { label: 'Go to Setup', onClick: () => go('setup') } },
+    { key: 'tv', label: 'Put the leaderboard on the clubhouse TV', hint: 'Open the TV link on the TV\'s browser or a laptop connected to it.', done: flag.get('tvOpened:' + ev.id), optional: true, action: { label: 'Open TV display', onClick: () => { flag.set('tvOpened:' + ev.id); bump((x) => x + 1); window.open(`/e/${ev.slug}/tv`, '_blank', 'noopener'); } } },
+  ];
+  const markSent = () => { if (!sent) { flag.set('linksSent:' + ev.id); bump((x) => x + 1); } };
+  const steps = [
+    { target: null, title: 'Your event control room', body: <><p>Everything for <b>{ev.name}</b> is run from here: the field, the links players use, the live scores and the results.</p><p>A quick tour of where everything is.</p></> },
+    { target: '[data-tour="checklist"]', title: 'Follow the checklist', body: <p>The checklist shows what to do next and ticks itself off as you go. The highlighted step is the next one. It folds away once everything's done.</p>, before: () => go('setup') },
+    { target: '[data-tour="tabs"]', title: 'The tabs', body: <><p><b>Setup</b>: name, date, format, rules, and opening and closing scoring.</p><p><b>Logos &amp; sponsors</b> · <b>Players</b>: add, import, group, approve · <b>Links &amp; QR</b>: send each player their link · <b>Committee</b>: disputes and official scores · <b>Leaderboard</b>.</p></> },
+    { target: '[data-tour="status"]', title: 'Nothing is public until you open scoring', body: <p>In Draft you can set everything up and players can check their details. On the day, press <b>Open scoring</b>. Afterwards, <b>Close scoring</b> to lock the results, then move the event to the archive.</p>, before: () => go('setup') },
+    { target: '.helpbtn', title: 'Help is always here', body: <p>Tap <b>?</b> any time to see this tour again.</p> },
+  ];
 
   return (
     <>
       <Header title={ev.name} sub={`${d.club?.name || ''} · ${fmtDate(ev.event_date)} · Event admin`} logo={ev.logo_url || d.club?.logo_url} status={<LiveBadge event={ev} />}
-        right={<span className="hdrlinks">{isClubAdmin ? <Link to={`/admin/club/${ev.club_id}`}>Club</Link> : <Link to="/admin">My events</Link>}</span>}
+        right={<span className="hdrlinks">{isClubAdmin ? <Link to={`/admin/club/${ev.club_id}`}>Club</Link> : <Link to="/admin">My events</Link>}<HelpButton onClick={tour.start} label="Show me around" /></span>}
         tabs={[['setup', 'Setup'], ['brand', 'Logos & sponsors'], ['players', `Players (${d.players.length}${pending ? ', ' + pending + ' to approve' : ''})`], ['links', 'Links & QR'], ['committee', `Committee${issues ? ' (' + issues + ')' : ''}`], ['board', 'Leaderboard']]}
         current={tab} onTab={go} />
+      <Tour steps={steps} open={tour.open} onClose={tour.close} />
       <main><div className="wrap wide">
+        {tab !== 'board' && <div data-tour="checklist"><Checklist id={'event:' + ev.id} title="Get this event ready" items={checklist} intro="Work down the list. Steps tick themselves off as you complete them." /></div>}
         {ev.status === 'draft' && tab !== 'setup' && <div className="banner warn spread"><span><b>Draft:</b> players can open their links but can't enter scores until you open scoring.</span><button type="button" className="btn small" onClick={() => go('setup')}>Go to Setup</button></div>}
         {tab === 'setup' && <SetupTab {...{ d, E, ev, toast, isClubAdmin }} />}
         {tab === 'brand' && <BrandTab {...{ ev, toast, reload: d.reload }} />}
         {tab === 'players' && <PlayersTab {...{ d, E, ev, toast, priv, loadPriv }} />}
-        {tab === 'links' && <LinksTab {...{ d, E, ev, toast, priv, loadPriv }} />}
+        {tab === 'links' && <LinksTab {...{ d, E, ev, toast, priv, loadPriv, markSent }} />}
         {tab === 'committee' && <CommitteeTab {...{ d, E, ev, toast }} />}
         {tab === 'board' && <><Leaderboard E={E} event={ev} club={d.club} tvHref={`/e/${ev.slug}/tv`} /><h2>Scorecards</h2><Scorecards E={E} /></>}
       </div></main>
@@ -71,7 +100,7 @@ function SetupTab({ d, E, ev, toast, isClubAdmin }) {
   const hasScores = d.scores.length + d.teamScores.length > 0;
   const save = async () => {
     setBusy(true);
-    const { error } = await supabase.from('events').update({ ...f, name: f.name.trim(), format: fs.format, settings: fs.settings }).eq('id', ev.id);
+    const { error } = await supabase.from('events').update({ ...f, name: f.name.trim(), format: fs.format, settings: { ...fs.settings, reviewed: true } }).eq('id', ev.id);
     setBusy(false); if (error) toast(errText(error)); else { toast('Saved. The leaderboard has been recalculated.'); d.reload(); }
   };
   const status = async (s) => { const { error } = await supabase.from('events').update({ status: s }).eq('id', ev.id); if (error) toast(errText(error)); else { toast({ live: 'Scoring is open', finished: 'Scoring closed. Results are final.', archived: 'Moved to the archive', draft: 'Back to draft' }[s]); d.reload(); } };
@@ -80,7 +109,7 @@ function SetupTab({ d, E, ev, toast, isClubAdmin }) {
 
   return (
     <div className="stack">
-      <div className="card form">
+      <div className="card form" data-tour="status">
         <h2>Event status</h2>
         {ev.status === 'draft' && <><p>Draft: players can open their links and check their details, but can't score yet. The public leaderboard is hidden.</p><div className="btns"><ConfirmButton className="btn" confirmText="Tap again to open scoring" onConfirm={() => status('live')}>Open scoring (go live)</ConfirmButton></div></>}
         {ev.status === 'live' && <><p>Live: players are scoring and the leaderboard is public.</p><div className="btns"><ConfirmButton className="btn" confirmText="Tap again to close scoring" onConfirm={() => status('finished')}>Close scoring and finalise</ConfirmButton><button type="button" className="btn ghost" onClick={() => status('draft')}>Back to draft</button></div></>}
@@ -201,6 +230,7 @@ function PlayersTab({ d, E, ev, toast, priv, loadPriv }) {
     <div className="stack">
       <form className="card form" onSubmit={add}>
         <h2>Add a player</h2>
+        <Tip id="players-groups">Give everyone in the same four-ball the <b>same group number</b>. Players can then mark each other, and team formats know who plays together. Use 0 if you'll group them later.</Tip>
         <div className="grid2">
           <label className="f">Name<input required maxLength={60} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
           <label className="f">Handicap index<input required inputMode="decimal" placeholder="12.4 or +1.2" value={f.hi} onChange={(e) => setF({ ...f, hi: e.target.value })} /></label>
@@ -287,7 +317,7 @@ function QrBox({ url, title, line, ev, club }) {
   );
 }
 
-function LinksTab({ d, E, ev, toast, priv, loadPriv }) {
+function LinksTab({ d, E, ev, toast, priv, loadPriv, markSent }) {
   const [grp, setGrp] = useState('all'); const [busy, setBusy] = useState('');
   const groups = [...new Set(d.players.map((p) => p.grp))].sort((a, b) => a - b);
   const people = d.players.filter((p) => p.status !== 'withdrawn' && (grp === 'all' || String(p.grp) === grp)).sort((a, b) => (a.grp || 999) - (b.grp || 999) || a.name.localeCompare(b.name));
@@ -311,11 +341,12 @@ function LinksTab({ d, E, ev, toast, priv, loadPriv }) {
       <div className="card">
         <div className="pad stack">
           <h2>Personal player links</h2>
+          <Tip id="links-how">Each link is private to one player: whoever opens it can score as that player. Send it straight to the player, not to a group chat. If one goes astray, use <b>New link</b> and the old one stops working.</Tip>
           <p className="note">Each player gets their own private link. Opening it on their phone signs them in as that player, for this event only. Send by WhatsApp or email, or print the QR sheet and hand each player their code at registration.</p>
           <div className="row">
             <select className="pick" style={{ width: 180 }} value={grp} onChange={(e) => setGrp(e.target.value)} aria-label="Group"><option value="all">All groups</option>{groups.map((g) => <option key={g} value={String(g)}>{g ? 'Group ' + g : 'Not in a group'}</option>)}</select>
-            <button type="button" className="btn" disabled={!items.length || !!busy} onClick={async () => { setBusy('qr'); try { await playerQrSheet({ event: ev, items }); } catch { toast("Couldn't build the PDF"); } setBusy(''); }}>{busy === 'qr' ? 'Preparing…' : `Download QR sheet (${items.length})`}</button>
-            <button type="button" className="btn ghost" disabled={!items.length} onClick={() => saveBlob(linksCsv(items), slugify(ev.name) + '-player-links.csv')}>Download links (CSV)</button>
+            <button type="button" className="btn" disabled={!items.length || !!busy} onClick={async () => { setBusy('qr'); markSent(); try { await playerQrSheet({ event: ev, items }); } catch { toast("Couldn't build the PDF"); } setBusy(''); }}>{busy === 'qr' ? 'Preparing…' : `Download QR sheet (${items.length})`}</button>
+            <button type="button" className="btn ghost" disabled={!items.length} onClick={() => { markSent(); saveBlob(linksCsv(items), slugify(ev.name) + '-player-links.csv'); }}>Download links (CSV)</button>
           </div>
           <p className="note">The CSV has every player's name, mobile, email and link, ready for a mail merge or bulk WhatsApp tool.</p>
         </div>
@@ -328,8 +359,8 @@ function LinksTab({ d, E, ev, toast, priv, loadPriv }) {
                 <td>{p.name}</td><td>{p.grp || '—'}</td>
                 <td style={{ minWidth: 260 }}><CopyField value={url} /></td>
                 <td className="row" style={{ flexWrap: 'nowrap' }}>
-                  <a className="btn ghost small" href={`https://wa.me/${n}?text=${encodeURIComponent(msg(p))}`} target="_blank" rel="noreferrer">WhatsApp</a>
-                  {pr.email && <a className="btn ghost small" href={`mailto:${pr.email}?subject=${encodeURIComponent('Your scorecard: ' + ev.name)}&body=${encodeURIComponent(msg(p))}`}>Email</a>}
+                  <a className="btn ghost small" href={`https://wa.me/${n}?text=${encodeURIComponent(msg(p))}`} target="_blank" rel="noreferrer" onClick={markSent}>WhatsApp</a>
+                  {pr.email && <a className="btn ghost small" onClick={markSent} href={`mailto:${pr.email}?subject=${encodeURIComponent('Your scorecard: ' + ev.name)}&body=${encodeURIComponent(msg(p))}`}>Email</a>}
                 </td>
                 <td className="r"><ConfirmButton className="link" confirmText="Tap again: old link stops working" onConfirm={() => reset(p)}>New link</ConfirmButton></td>
               </tr>
@@ -367,7 +398,7 @@ function CommitteeTab({ d, E, ev, toast }) {
       </div>
 
       <div className="card">
-        <div className="pad"><h2>Needs attention</h2></div>
+        <div className="pad stack"><h2>Needs attention</h2><Tip id="committee-how">When a player and their marker enter different scores for a hole, it appears here. Pick the right one, or set an official score below. The leaderboard updates straight away.</Tip></div>
         {!issues.length ? <div className="empty">Nothing to check right now.</div> : (
           <div className="tscroll"><table className="list"><tbody>
             {issues.map((x, i) => (

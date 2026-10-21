@@ -5,6 +5,7 @@ import { makeEngine } from '../lib/engine.js';
 import { Header, LiveBadge, Loading, Sponsors, fmtDate, useHashTab } from '../components/ui.jsx';
 import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
+import { Tip } from '../components/Guide.jsx';
 
 export default function PublicEvent() {
   const { slug } = useParams();
@@ -22,6 +23,7 @@ export default function PublicEvent() {
         {ev.self_register && ['draft', 'live'].includes(ev.status) && (
           <div className="banner spread"><span>Playing in this event and not on the list?</span><Link className="btn small" to={`/e/${slug}/join`}>Register to play</Link></div>
         )}
+        {tab === 'board' && <Tip id="public-board">Scores update live as players enter them. Tap any name to see that card hole by hole.</Tip>}
         {tab === 'board' && <Leaderboard E={E} event={ev} club={d.club} tvHref={`/e/${slug}/tv`} />}
         {tab === 'cards' && <Scorecards E={E} />}
         <Sponsors event={ev} />

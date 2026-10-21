@@ -52,7 +52,20 @@ export default function AdminHome() {
                   </Link>))}</div>
               </div>
             )}
-            {!clubs.length && !events.length && <div className="banner">You're signed in. Create your club below, or open the invite link your club admin sent you.</div>}
+            {!clubs.length && !events.length && (
+              <div className="card pad stack">
+                <h2>How it works</h2>
+                <ol className="howto">
+                  <li><b>Create your club</b><span>Below. You become the club owner.</span></li>
+                  <li><b>Add your course</b><span>The Seasons card loads in one tap.</span></li>
+                  <li><b>Create an event</b><span>Name, date, format and rules.</span></li>
+                  <li><b>Add players</b><span>Type them in or import a spreadsheet.</span></li>
+                  <li><b>Send links</b><span>Each player gets a private scorecard link or QR code.</span></li>
+                  <li><b>Open scoring</b><span>Scores stream to the leaderboard and clubhouse TV.</span></li>
+                </ol>
+                <p className="note">Helping with someone else's event? Open the invite link they sent you instead. It brings you straight to that event.</p>
+              </div>
+            )}
             <form className="card form" onSubmit={create}>
               <h2>{clubs.length ? 'Add another club' : 'Create your club'}</h2>
               <div className="grid2">

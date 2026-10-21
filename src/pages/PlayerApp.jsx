@@ -7,6 +7,7 @@ import { errText, supabase } from '../lib/supabase.js';
 import { ConfirmButton, Header, LiveBadge, Loading, Sponsors, useHashTab, useSession, useToast } from '../components/ui.jsx';
 import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
+import { HelpButton, Tour, useTour } from '../components/Guide.jsx';
 
 const get = (o, path) => path.reduce((a, k) => (a == null ? undefined : a[k]), o);
 function setIn(o, [a, b, c], v) { return { ...o, [a]: { ...(o[a] || {}), [b]: { ...(o[a]?.[b] || {}), [c]: v } } }; }
@@ -83,12 +84,15 @@ export default function PlayerApp() {
     }, 450);
   }, [d.event?.id, toast]);
 
+  const tour = useTour('player', !!me && tab === 'score');
+
   if (d.loading || session === undefined) return <Loading />;
   if (!d.event) return <main><div className="wrap"><div className="card"><div className="empty"><b>Event not found</b>Open the personal link the organiser sent you.</div></div></div></main>;
   const ev = d.event;
   const header = (
     <Header title={ev.name} sub={me ? `${me.name}${me.group ? ' · Group ' + me.group : ''}` : d.club?.name} logo={ev.logo_url || d.club?.logo_url}
-      status={<LiveBadge event={ev} />} tabs={[['score', 'My scores'], ['board', 'Leaderboard'], ['cards', 'Scorecards']]} current={tab} onTab={go} />
+      status={<LiveBadge event={ev} />} right={me ? <HelpButton onClick={() => { go('score'); tour.start(); }} label="How to use your scorecard" /> : null}
+      tabs={[['score', 'My scores'], ['board', 'Leaderboard'], ['cards', 'Scorecards']]} current={tab} onTab={go} />
   );
   if (!me) {
     return <>{header}<main><div className="wrap">
@@ -104,9 +108,24 @@ export default function PlayerApp() {
   const blockMsg = ev.status === 'draft' ? "Scoring hasn't opened yet. The organiser opens it under Setup → Open scoring (go live)."
     : ev.status !== 'live' ? 'Scoring is closed for this event.' : me.status !== 'active' ? 'Your entry still needs the organiser’s approval.' : null;
 
+  const scr = E.fmt === 'scramble';
+  const others = group.length > 1;
+  const steps = [
+    { target: null, title: `Welcome, ${first(me.name)}`, body: <><p>This is your personal scorecard for <b>{ev.name}</b>. It only works for you, so keep the link to yourself.</p><p>Here's how it works. It takes 30 seconds.</p></> },
+    { target: '[data-tour="hole"]', title: 'Choose the hole', body: <p>Use the arrows to move between holes. You'll see the par, stroke index and distance for each tee{E.allianceLike ? ', plus how many scores count on that hole' : ''}.</p> },
+    { target: '[data-tour="strip"]', title: 'Jump to any hole', body: <p>Tap a number to jump straight there. Shaded holes are complete. A <b className="under">red dot</b> means a score needs checking.</p> },
+    scr
+      ? { target: '[data-tour="stepper"]', title: 'Enter the team score', body: <><p>Your team shares one score per hole. The first tap on <b>+</b> fills in par; then use <b>+</b> and <b>−</b>. Anyone in the team can enter it.</p>{E.tracksDrives && <p>Underneath, tap whose drive you used. The numbers show each player's drives against the minimum.</p>}</> }
+      : { target: '[data-tour="stepper"]', title: 'Enter your score', body: <><p>Enter your <b>gross</b> score. The first tap on <b>+</b> fills in par; then use <b>+</b> and <b>−</b>. Your net score{E.fmt === 'stroke' ? '' : ' and Stableford points'} work out automatically.</p>{E.pickupOK && <p>Didn't finish the hole? Tap <b>Picked up</b>.</p>}<p>Scores save as you tap. No save button needed.</p></> },
+    ...(!scr && others ? [{ target: '[data-tour="marking"]', title: "You're also the marker", body: <><p>Enter the scores of the others in your group too. Your entry is the marker's check on theirs.</p><p>When the player's and the marker's scores match you'll see <b className="okc">✓ Agreed</b>. If they don't, both phones show it so you can sort it out on the spot.</p></> }] : []),
+    ...(!scr ? [{ target: '[data-tour="finish"]', title: 'Sign your card', body: <p>After 18 holes, with nothing disputed, tap <b>Sign my card</b>. Your marker then attests it on their phone. That locks the card, just like handing it in.</p> }] : []),
+    { target: '[data-tour="tabs"]', title: 'Follow the leaderboard', body: <><p><b>Leaderboard</b> shows the live standings. Tap any name to see their card. <b>Scorecards</b> shows every {E.isTeam ? 'team' : 'player'}'s card.</p><p>Tap <b>?</b> at the top any time to see this again.</p></> },
+  ];
+
   return (
     <>
       {header}
+      <Tour steps={steps} open={tour.open} onClose={tour.close} />
       <main><div className="wrap">
         {banner}
         {tab === 'board' && <Leaderboard E={E} event={ev} club={d.club} tvHref={`/e/${slug}/tv`} highlight={me.id} />}
@@ -125,7 +144,7 @@ function HoleHeader({ E, hole, setHole, group, team }) {
   const lens = Object.values(E.TEES).filter((t, idx, a) => a.findIndex((x) => x.len === t.len) === idx);
   return (
     <div className="card">
-      <div className="holehead">
+      <div className="holehead" data-tour="hole">
         <button type="button" aria-label="Previous hole" onClick={() => setHole(((hole + 16) % 18) + 1)}>‹</button>
         <div className="holeinfo">
           <div className="hn">Hole {hole}</div>
@@ -134,7 +153,7 @@ function HoleHeader({ E, hole, setHole, group, team }) {
         </div>
         <button type="button" aria-label="Next hole" onClick={() => setHole((hole % 18) + 1)}>›</button>
       </div>
-      <div className="strip">
+      <div className="strip" data-tour="strip">
         {Array.from({ length: 18 }, (_, k) => k + 1).map((h) => (
           <button key={h} type="button" aria-label={`Hole ${h}`} className={[h === hole ? 'cur' : done(h) ? 'done' : '', bad(h) ? 'bad' : ''].join(' ')} onClick={() => setHole(h)}>{h}</button>
         ))}
@@ -169,7 +188,7 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, car
     const counted = E.allianceLike && team && E.allianceCalc(team).holes[i].counted.has(p.id);
     const tot = E.fmt === 'stroke' ? (c.thru ? `Total ${E.basis === 'gross' ? 'gross ' + fmtPar(c.toPar) : 'net ' + fmtPar(c.net)}` : 'No score yet') : `Total ${c.pts} pts`;
     return (
-      <div key={p.id} className={'pcard' + (isMe ? ' me' : '') + (counted ? ' counted' : '')}>
+      <div key={p.id} className={'pcard' + (isMe ? ' me' : '') + (counted ? ' counted' : '')} data-tour={isMe ? 'me' : p.id === group.find((x) => x.id !== me.id)?.id ? 'marking' : undefined}>
         <div style={{ minWidth: 0 }}>
           <div className="pn">{p.name}<small>{isMe ? 'You' : 'Marking'}</small> {s > 0 && <span className="dots" title="Shots received on this hole">{'•'.repeat(s)}</span>}</div>
           <div className="pi">HI {fmtHi(p.hi)} · course HC {E.handicaps(p).ch} · playing HC {c.ph}</div>
@@ -184,7 +203,7 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, car
             <span>{tot} · thru {c.thru}</span>
           </div>
         </div>
-        <Stepper v={mine ?? null} par={E.PAR[i]} label={p.name} blocked={blockMsg || (locked ? (isMe ? 'Your card is signed, so it is locked. Ask the organiser to reopen it.' : `${p.name}'s card is attested and locked.`) : null)} onBlocked={toast} onSet={(v) => save(['p:' + p.id, role, 'h' + hole], v)} />
+        <div data-tour={isMe ? 'stepper' : undefined}><Stepper v={mine ?? null} par={E.PAR[i]} label={p.name} blocked={blockMsg || (locked ? (isMe ? 'Your card is signed, so it is locked. Ask the organiser to reopen it.' : `${p.name}'s card is attested and locked.`) : null)} onBlocked={toast} onSet={(v) => save(['p:' + p.id, role, 'h' + hole], v)} /></div>
         {canScore && !locked && (
           <div className="links">
             {E.pickupOK && mine !== 0 && <button type="button" onClick={() => save(['p:' + p.id, role, 'h' + hole], 0)}>Picked up</button>}
@@ -232,7 +251,7 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, car
                   <div className="pi">{team.label}</div>
                   <div className="res">{v != null && v > 0 && <span>Net <b>{v - s}</b></span>}{v != null && E.r.scrScoring === 'stableford' && <span><b>{E.ptsFor(i, s, v)}</b> pts</span>}</div>
                 </div>
-                <Stepper v={v} par={E.PAR[i]} label="the team" blocked={blockMsg} onBlocked={toast} onSet={(x) => save(['t:' + team.key, 'strokes', 'h' + hole], x)} />
+                <div data-tour="stepper"><Stepper v={v} par={E.PAR[i]} label="the team" blocked={blockMsg} onBlocked={toast} onSet={(x) => save(['t:' + team.key, 'strokes', 'h' + hole], x)} /></div>
                 {canScore && <div className="links">{E.pickupOK && v !== 0 && <button type="button" onClick={() => save(['t:' + team.key, 'strokes', 'h' + hole], 0)}>Picked up</button>}{v != null && <button type="button" onClick={() => save(['t:' + team.key, 'strokes', 'h' + hole], null)}>Clear hole {hole}</button>}</div>}
               </div>
               {E.tracksDrives && driveRow(team)}
@@ -255,7 +274,7 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, car
       {cardOpen && <div className="card" dangerouslySetInnerHTML={{ __html: E.isTeam && team ? teamCard(E, team) : indCard(E, me, myCalc) }} />}
 
       {E.fmt !== 'scramble' && (
-        <div className="card form">
+        <div className="card form" data-tour="finish">
           <h3>Finish your round</h3>
           {me.attested_at ? <p className="okc">Your card is signed and attested. Well played.</p>
             : me.signed_at ? <p>You've signed your card. Your marker now has to attest it on their phone.</p>

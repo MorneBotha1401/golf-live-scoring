@@ -4,6 +4,7 @@ import { errText, isRealUser, supabase } from '../lib/supabase.js';
 import { uploadLogo } from '../lib/upload.js';
 import { PRESETS } from '../lib/presets.js';
 import { FORMATS, DEFAULT_SETTINGS } from '../lib/engine.js';
+import { Checklist, HelpButton, Tip, Tour, useTour } from '../components/Guide.jsx';
 import { ConfirmButton, CopyField, Header, Loading, fmtDate, statusLabel, useHashTab, useSession, useToast } from '../components/ui.jsx';
 
 export default function ClubAdmin() {
@@ -28,6 +29,8 @@ export default function ClubAdmin() {
   }, [clubId]);
   useEffect(() => { if (isRealUser(session)) load(); }, [session, load]);
 
+  const tour = useTour('clubadmin', !!club && !denied);
+
   if (session === undefined) return <Loading />;
   if (!isRealUser(session)) return <Navigate to={`/login?next=/admin/club/${clubId}`} replace />;
   if (denied && club) return <main><div className="wrap"><div className="card"><div className="empty"><b>You're not an admin of this club</b><Link to="/admin">Back to my clubs</Link></div></div></div></main>;
@@ -35,13 +38,28 @@ export default function ClubAdmin() {
 
   const live = events.filter((e) => e.status !== 'archived');
   const archived = events.filter((e) => e.status === 'archived');
+  const items = [
+    { key: 'course', label: 'Add your course', hint: 'The Seasons card loads in one tap. Check pars, stroke indexes, ratings and slopes against the current card.', done: courses.length > 0, action: { label: 'Add course', onClick: () => go('courses') } },
+    { key: 'event', label: 'Create your first event', hint: 'Give it the tournament or golf day name, e.g. BMW Championship.', done: events.length > 0, action: { label: 'New event', onClick: () => go('events') } },
+    { key: 'logo', label: 'Upload the club logo', hint: 'Shown when an event has no logo of its own.', done: !!club.logo_url, optional: true, action: { label: 'Club details', onClick: () => go('club') } },
+    { key: 'people', label: 'Invite helpers', hint: 'An event admin can run one event: players, logos, links and scores.', done: members.length > 1 || eventAdmins.length > 0 || invites.length > 0, optional: true, action: { label: 'Invite', onClick: () => go('people') } },
+  ];
+  const steps = [
+    { target: null, title: `Welcome to ${club.name}`, body: <><p>This is your club's home: every event, past and present, plus your courses and the people who help you run things.</p><p>A quick look around.</p></> },
+    { target: '[data-tour="checklist"]', title: 'Getting started', body: <p>Follow this checklist the first time. Add your course, then create an event. It ticks itself off.</p>, before: () => go('events') },
+    { target: '[data-tour="tabs"]', title: 'The tabs', body: <><p><b>Events</b>: create events and open upcoming, live and finished ones · <b>Archive</b>: past events with full results, by year.</p><p><b>Courses</b>: tees, ratings, slopes and the hole-by-hole card · <b>Admins &amp; invites</b>: bring in helpers · <b>Club details</b>: name and logo.</p></> },
+    { target: '[data-tour="newevent"]', title: 'Create an event', body: <p>Give it a name, date, course and format. On the next screen you add players, logos, sponsors and rules, and send the players their links.</p>, before: () => go('events') },
+    { target: '.helpbtn', title: 'Help is always here', body: <p>Tap <b>?</b> any time to see this tour again.</p> },
+  ];
 
   return (
     <>
       <Header title={club.name} sub={'Club admin' + (club.location ? ' · ' + club.location : '')} logo={club.logo_url}
-        right={<span className="hdrlinks"><Link to="/admin">All clubs</Link></span>}
+        right={<span className="hdrlinks"><Link to="/admin">All clubs</Link><HelpButton onClick={tour.start} label="Show me around" /></span>}
         tabs={[['events', 'Events'], ['archive', `Archive (${archived.length})`], ['courses', 'Courses'], ['people', 'Admins & invites'], ['club', 'Club details']]} current={tab} onTab={go} />
+      <Tour steps={steps} open={tour.open} onClose={tour.close} />
       <main><div className="wrap">
+        {tab !== 'archive' && <div data-tour="checklist"><Checklist id={'club:' + club.id} title="Set up your club" items={items} /></div>}
         {tab === 'events' && <EventsTab {...{ club, courses, events: live, nav, toast, go }} />}
         {tab === 'archive' && <ArchiveTab events={archived} reload={load} toast={toast} />}
         {tab === 'courses' && <CoursesTab {...{ club, courses, reload: load, toast }} />}
@@ -77,7 +95,7 @@ function EventsTab({ club, courses, events, nav, toast, go }) {
   const finished = events.filter((e) => e.status === 'finished');
   return (
     <>
-      <form className="card form" onSubmit={create}>
+      <form className="card form" onSubmit={create} data-tour="newevent">
         <h2>New event</h2>
         {!courses.length && <div className="banner warn">Add your course first under <b>Courses</b>. The Seasons card is ready to load in one tap.</div>}
         <label className="f">Tournament or golf day name<input required minLength={2} maxLength={100} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="BMW Championship" /></label>
@@ -135,6 +153,7 @@ function CoursesTab({ club, courses, reload, toast }) {
           <button type="button" className="btn ghost small" onClick={() => setEdit(JSON.parse(JSON.stringify(c)))}>Edit</button>
         </div>
       ))}
+      <Tip id="courses-check">Course handicaps come from each tee's <b>course rating</b> and <b>slope</b>. Copy them exactly from the club's current card or the handicap system, and update them whenever the course is re-rated.</Tip>
       <div className="btns">
         <button type="button" className="btn" onClick={() => startNew('seasons')}>Add Seasons Golf Course card</button>
         <button type="button" className="btn ghost" onClick={() => startNew('blank')}>Add a blank course</button>
