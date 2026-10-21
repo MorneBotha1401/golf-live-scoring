@@ -6,6 +6,12 @@ import { configured } from './lib/supabase.js';
 import { initInstall } from './lib/install.js';
 
 initInstall();
+
+// A used or expired email link comes back as #error=...; send the person to sign in with a clear message.
+if (/[#&]error(_code)?=/.test(window.location.hash)) {
+  const back = window.location.pathname === '/start' ? '/start' : window.location.pathname;
+  window.history.replaceState(null, '', `/login?expired=1&next=${encodeURIComponent(back === '/login' ? '/admin' : back)}`);
+}
 import { ToastProvider } from './components/ui.jsx';
 import Landing from './pages/Landing.jsx';
 import Demo, { DemoTv } from './pages/Demo.jsx';
