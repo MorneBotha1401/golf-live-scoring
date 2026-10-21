@@ -14,8 +14,13 @@ export default function PlayerClaim() {
         await ensureSession();
         const { data, error } = await supabase.rpc('claim_player', { p_token: token });
         if (error) throw error;
-        try { localStorage.setItem('player:' + data.slug, data.player_id); } catch { /* private mode */ }
-        if (on) nav(`/play/${data.slug}`, { replace: true });
+        try {
+          localStorage.setItem('player:' + data.slug, data.player_id);
+          localStorage.setItem('token:' + data.slug, token);
+          localStorage.setItem('claimed:' + token, '1');
+        } catch { /* private mode */ }
+        // Keep the personal code in the address, so a home-screen icon made from this page still works.
+        if (on) nav(`/play/${data.slug}?k=${encodeURIComponent(token)}`, { replace: true });
       } catch (e) { if (on) setErr(errText(e)); }
     })();
     return () => { on = false; };

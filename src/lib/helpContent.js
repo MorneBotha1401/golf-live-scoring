@@ -21,6 +21,7 @@ export function playerHelp(E) {
   list.push(
     { q: 'How does this format work?', a: E ? `${E.describe()}.\n${E.cbText}.` : 'Ask the organiser.' },
     { q: 'Where is the leaderboard?', a: 'Tap **Leaderboard** at the top. It updates live. Tap any name to see that card hole by hole. **Scorecards** shows every card.' },
+    { q: 'How do I save this to my home screen?', a: 'Tap **Add to home screen** under your scores and follow the steps for your phone. You get an app icon that opens your own scorecard in one tap, full screen.' },
     { q: 'I closed the page or my phone died', a: 'Open your personal link again. Everything you entered is saved.\nOn another phone, open the same link there. If you\'ve lost the link, ask the organiser to send it again.' },
     { q: 'Can I share my link?', a: 'No. Your link signs whoever opens it in as you, so keep it to yourself. If it was shared by mistake, the organiser can make you a new one and the old one stops working.' },
   );

@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import './styles.css';
 import { configured } from './lib/supabase.js';
+import { initInstall } from './lib/install.js';
+
+initInstall();
 import { ToastProvider } from './components/ui.jsx';
 import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';

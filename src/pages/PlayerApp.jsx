@@ -3,11 +3,13 @@ import { useParams } from 'react-router-dom';
 import { useEventData } from '../lib/useEvent.js';
 import { makeEngine, strokesOn, TERMS, countWord, fmtPar, first, fmtHi } from '../lib/engine.js';
 import { indCard, teamCard } from '../lib/render.js';
-import { errText, supabase } from '../lib/supabase.js';
+import { ensureSession, errText, supabase } from '../lib/supabase.js';
+import { isStandalone, platform, setPlayerManifest, shouldOfferInstall } from '../lib/install.js';
+import InstallSheet from '../components/InstallSheet.jsx';
 import { ConfirmButton, Header, LiveBadge, Loading, Sponsors, useHashTab, useSession, useToast } from '../components/ui.jsx';
 import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
-import { Coach, Help, Tour, Welcome, useOnboarding } from '../components/Guide.jsx';
+import { Coach, Help, Tour, Welcome, seenTour, useOnboarding } from '../components/Guide.jsx';
 import { playerHelp } from '../lib/helpContent.js';
 
 const FORMAT_SHORT = { stableford: 'Stableford', betterball: 'Betterball Stableford', alliance: '4-ball Alliance', scramble: 'American Scramble', scramble_drive: 'Scramble, own ball' };
@@ -15,7 +17,40 @@ const get = (o, path) => path.reduce((a, k) => (a == null ? undefined : a[k]), o
 function setIn(o, [a, b, c], v) { return { ...o, [a]: { ...(o[a] || {}), [b]: { ...(o[a]?.[b] || {}), [c]: v } } }; }
 function delIn(o, [a, b, c]) { const n = { ...o, [a]: { ...(o[a] || {}), [b]: { ...(o[a]?.[b] || {}) } } }; delete n[a][b][c]; return n; }
 
+const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
+
+/**
+ * The personal code can ride along in the address (?k=…). A home-screen icon opens
+ * that address in fresh storage on iPhones, so link this device to the player first.
+ */
 export default function PlayerApp() {
+  const { slug } = useParams();
+  const k = new URLSearchParams(window.location.search).get('k');
+  const [ready, setReady] = useState(() => !k || ls.get('claimed:' + k) === '1');
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    if (ready) return undefined;
+    let on = true;
+    (async () => {
+      try {
+        await ensureSession();
+        const { data, error } = await supabase.rpc('claim_player', { p_token: k });
+        if (error) throw error;
+        ls.set('player:' + data.slug, data.player_id); ls.set('token:' + data.slug, k); ls.set('claimed:' + k, '1');
+        if (on) setReady(true);
+      } catch (e) { if (on) setErr(errText(e)); }
+    })();
+    return () => { on = false; };
+  }, [ready, k]);
+  if (!ready) {
+    return <main><div className="wrap"><div className="card"><div className="empty">
+      {err ? <><b>We couldn't open your scorecard</b>{err}</> : <><b>Opening your scorecard…</b>One moment.</>}
+    </div></div></div></main>;
+  }
+  return <PlayerAppInner key={slug} />;
+}
+
+function PlayerAppInner() {
   const { slug } = useParams();
   const toast = useToast();
   const session = useSession();
@@ -88,6 +123,24 @@ export default function PlayerApp() {
 
   const ob = useOnboarding('player', !!me && tab === 'score');
 
+  // Home screen: point the app at this player's card, keep the code in the address, offer to save it.
+  const token = new URLSearchParams(window.location.search).get('k') || ls.get('token:' + slug);
+  const playerUrl = `/play/${slug}${token ? '?k=' + encodeURIComponent(token) : ''}`;
+  const evName = d.event?.name || '';
+  const shortName = evName.length <= 12 ? evName || 'My scorecard' : (evName.split(/\s+/).reduce((a, w) => ((a + ' ' + w).trim().length <= 12 ? (a + ' ' + w).trim() : a), '') || evName.slice(0, 12));
+  useEffect(() => {
+    if (!me) return;
+    if (token && !window.location.search.includes('k=')) { try { window.history.replaceState(null, '', playerUrl + window.location.hash); } catch { /* ignore */ } }
+    setPlayerManifest({ url: playerUrl, name: `${evName} · ${me.name.split(' ')[0]}'s scorecard`, shortName });
+  }, [me?.id, evName, token]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [a2, setA2] = useState(false);
+  const offered = useRef(false);
+  useEffect(() => {
+    if (!me || offered.current || ob.welcome || ob.tour || !seenTour('player') || platform().os === 'desktop' || !shouldOfferInstall()) return undefined;
+    const t = setTimeout(() => { offered.current = true; setA2(true); }, 2500);
+    return () => clearTimeout(t);
+  }, [me?.id, ob.welcome, ob.tour]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (d.loading || session === undefined) return <Loading />;
   if (!d.event) return <main><div className="wrap"><div className="card"><div className="empty"><b>Event not found</b>Open the personal link the organiser sent you.</div></div></div></main>;
   const ev = d.event;
@@ -145,11 +198,12 @@ export default function PlayerApp() {
           { title: 'Sign your card after 18 holes', text: others ? 'Your marker then attests it, and it locks.' : 'That locks it, like handing it in.' },
         ]} />
       <Tour steps={steps} open={ob.tour} onClose={ob.closeTour} />
+      <InstallSheet open={a2} onClose={() => setA2(false)} label={shortName} url={window.location.origin + playerUrl} />
       <main><div className="wrap">
         {banner}
         {tab === 'board' && <Leaderboard E={E} event={ev} club={d.club} tvHref={`/e/${slug}/tv`} highlight={me.id} />}
         {tab === 'cards' && <Scorecards E={E} initial={E.isTeam ? (me.group ? 't:' + E.teamKey(me) : 'all') : 'p:' + me.id} />}
-        {tab === 'score' && <ScoreEntry {...{ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload: d.reload, paused: ob.welcome || ob.tour, eventId: ev.id }} />}
+        {tab === 'score' && <ScoreEntry {...{ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload: d.reload, paused: ob.welcome || ob.tour || a2, eventId: ev.id, onInstall: () => setA2(true) }} />}
         <Sponsors event={ev} />
       </div></main>
     </>
@@ -193,7 +247,7 @@ function Stepper({ v, par, label, blocked, onBlocked, onSet }) {
   );
 }
 
-function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload, paused, eventId }) {
+function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload, paused, eventId, onInstall }) {
   const i = hole - 1;
   const team = E.isTeam && me.group ? E.teamsOf().find((t) => t.key === E.teamKey(me)) : null;
   const myCalc = E.indCalc(me);
@@ -301,6 +355,7 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, car
       {others.length > 0 && E.fmt !== 'scramble' && <p className="note">You can enter scores for everyone in your group: your own count as the player's score, the others as the marker's. When a player and their marker agree, the hole is ticked ✓. A red dot on a hole means the two disagree: talk it through and correct one of them.</p>}
 
       <div className="btns">
+        {!isStandalone() && <button type="button" className="btn ghost" onClick={onInstall}><img src="/icons/icon-192.png" alt="" width="20" height="20" style={{ borderRadius: 5 }} />Add to home screen</button>}
         <button type="button" className="btn ghost" onClick={() => setCardOpen(!cardOpen)}>{cardOpen ? 'Hide scorecard' : E.isTeam ? (E.fmt === 'betterball' ? "Show pair's card" : 'Show team card') : 'Show my scorecard'}</button>
       </div>
       {cardOpen && <div className="card" dangerouslySetInnerHTML={{ __html: E.isTeam && team ? teamCard(E, team) : indCard(E, me, myCalc) }} />}

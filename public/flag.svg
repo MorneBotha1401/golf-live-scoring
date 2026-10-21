@@ -1,1 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1c4a32"/><path d="M22 52V12" stroke="#f2f5ef" stroke-width="4" stroke-linecap="round"/><path d="M24 13l20 7-20 8z" fill="#e0a03a"/><ellipse cx="32" cy="52" rx="14" ry="3" fill="#2f7a4c"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#235c3d"/>
+      <stop offset="1" stop-color="#143823"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f8f5a"/>
+      <stop offset="1" stop-color="#2c6e44"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- putting green -->
+  <ellipse cx="256" cy="392" rx="178" ry="52" fill="url(#green)"/>
+  <ellipse cx="256" cy="392" rx="178" ry="52" fill="none" stroke="#5aa874" stroke-width="4" opacity=".6"/>
+  <!-- cup -->
+  <ellipse cx="236" cy="392" rx="30" ry="10" fill="#0b2015"/>
+  <!-- pin -->
+  <rect x="230" y="104" width="12" height="290" rx="6" fill="#f4f6f1"/>
+  <!-- flag -->
+  <path d="M242 110 L388 158 L242 208 Z" fill="#e0a03a"/>
+  <path d="M242 110 L388 158 L242 140 Z" fill="#f0bf62" opacity=".55"/>
+  <!-- ball -->
+  <circle cx="318" cy="380" r="24" fill="#ffffff"/>
+  <circle cx="311" cy="373" r="3.2" fill="#d5dbd3"/><circle cx="322" cy="371" r="3.2" fill="#d5dbd3"/>
+  <circle cx="316" cy="383" r="3.2" fill="#d5dbd3"/><circle cx="327" cy="381" r="3.2" fill="#d5dbd3"/>
+  <circle cx="309" cy="385" r="3.2" fill="#d5dbd3"/>
+  <!-- live pulse -->
+  <circle cx="400" cy="80" r="26" fill="#ff5a4e"/>
+  <circle cx="400" cy="80" r="38" fill="none" stroke="#ff6b60" stroke-width="6" opacity=".4"/>
+</svg>
