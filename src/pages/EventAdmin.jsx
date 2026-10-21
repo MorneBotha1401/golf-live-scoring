@@ -47,6 +47,7 @@ export default function EventAdmin() {
         tabs={[['setup', 'Setup'], ['brand', 'Logos & sponsors'], ['players', `Players (${d.players.length}${pending ? ', ' + pending + ' to approve' : ''})`], ['links', 'Links & QR'], ['committee', `Committee${issues ? ' (' + issues + ')' : ''}`], ['board', 'Leaderboard']]}
         current={tab} onTab={go} />
       <main><div className="wrap wide">
+        {ev.status === 'draft' && tab !== 'setup' && <div className="banner warn spread"><span><b>Draft:</b> players can open their links but can't enter scores until you open scoring.</span><button type="button" className="btn small" onClick={() => go('setup')}>Go to Setup</button></div>}
         {tab === 'setup' && <SetupTab {...{ d, E, ev, toast, isClubAdmin }} />}
         {tab === 'brand' && <BrandTab {...{ ev, toast, reload: d.reload }} />}
         {tab === 'players' && <PlayersTab {...{ d, E, ev, toast, priv, loadPriv }} />}

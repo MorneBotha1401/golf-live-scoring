@@ -98,9 +98,11 @@ export default function PlayerApp() {
   }
 
   const banner = me.status === 'pending' ? <div className="banner warn">You're registered. The organiser still has to approve your entry before you can score.</div>
-    : ev.status === 'draft' ? <div className="banner">Scoring opens when the organiser starts the event. You can check your details below.</div>
+    : ev.status === 'draft' ? <div className="banner warn"><b>Scoring isn't open yet.</b> The organiser opens it under Setup → Open scoring (go live). Until then you can check your details below.</div>
     : ev.status !== 'live' ? <div className="banner">Scoring is closed. These are the final results.</div> : null;
   const canScore = ev.status === 'live' && me.status === 'active';
+  const blockMsg = ev.status === 'draft' ? "Scoring hasn't opened yet. The organiser opens it under Setup → Open scoring (go live)."
+    : ev.status !== 'live' ? 'Scoring is closed for this event.' : me.status !== 'active' ? 'Your entry still needs the organiser’s approval.' : null;
 
   return (
     <>
@@ -109,7 +111,7 @@ export default function PlayerApp() {
         {banner}
         {tab === 'board' && <Leaderboard E={E} event={ev} club={d.club} tvHref={`/e/${slug}/tv`} highlight={me.id} />}
         {tab === 'cards' && <Scorecards E={E} initial={E.isTeam ? (me.group ? 't:' + E.teamKey(me) : 'all') : 'p:' + me.id} />}
-        {tab === 'score' && <ScoreEntry {...{ E, me, group, hole, setHole, save, canScore, cardOpen, setCardOpen, toast, reload: d.reload }} />}
+        {tab === 'score' && <ScoreEntry {...{ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload: d.reload }} />}
         <Sponsors event={ev} />
       </div></main>
     </>
@@ -141,19 +143,19 @@ function HoleHeader({ E, hole, setHole, group, team }) {
   );
 }
 
-function Stepper({ v, par, label, disabled, onSet }) {
+function Stepper({ v, par, label, blocked, onBlocked, onSet }) {
   const term = v == null ? 'Tap +' : v === 0 ? 'Picked up' : TERMS[String(v - par)] || (v - par > 0 ? '+' + (v - par) : '');
-  const step = (dlt) => { const next = v == null || v === 0 ? (dlt > 0 ? par : par - 1) : Math.min(15, Math.max(1, v + dlt)); if (next !== v) onSet(next); };
+  const step = (dlt) => { if (blocked) { onBlocked(blocked); return; } const next = v == null || v === 0 ? (dlt > 0 ? par : par - 1) : Math.min(15, Math.max(1, v + dlt)); if (next !== v) onSet(next); };
   return (
     <div className="stepper">
-      <button type="button" aria-label={`One less for ${label}`} disabled={disabled} onClick={() => step(-1)}>−</button>
+      <button type="button" aria-label={`One less for ${label}`} aria-disabled={!!blocked} style={blocked ? { opacity: 0.45 } : undefined} onClick={() => step(-1)}>−</button>
       <div className="val"><b className="num">{v == null ? '–' : v === 0 ? 'P' : v}</b><small>{term}</small></div>
-      <button type="button" aria-label={`One more for ${label}`} disabled={disabled} onClick={() => step(1)}>+</button>
+      <button type="button" aria-label={`One more for ${label}`} aria-disabled={!!blocked} style={blocked ? { opacity: 0.45 } : undefined} onClick={() => step(1)}>+</button>
     </div>
   );
 }
 
-function ScoreEntry({ E, me, group, hole, setHole, save, canScore, cardOpen, setCardOpen, toast, reload }) {
+function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload }) {
   const i = hole - 1;
   const team = E.isTeam && me.group ? E.teamsOf().find((t) => t.key === E.teamKey(me)) : null;
   const myCalc = E.indCalc(me);
@@ -182,7 +184,7 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, cardOpen, set
             <span>{tot} · thru {c.thru}</span>
           </div>
         </div>
-        <Stepper v={mine ?? null} par={E.PAR[i]} label={p.name} disabled={!canScore || locked} onSet={(v) => save(['p:' + p.id, role, 'h' + hole], v)} />
+        <Stepper v={mine ?? null} par={E.PAR[i]} label={p.name} blocked={blockMsg || (locked ? (isMe ? 'Your card is signed, so it is locked. Ask the organiser to reopen it.' : `${p.name}'s card is attested and locked.`) : null)} onBlocked={toast} onSet={(v) => save(['p:' + p.id, role, 'h' + hole], v)} />
         {canScore && !locked && (
           <div className="links">
             {E.pickupOK && mine !== 0 && <button type="button" onClick={() => save(['p:' + p.id, role, 'h' + hole], 0)}>Picked up</button>}
@@ -230,7 +232,7 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, cardOpen, set
                   <div className="pi">{team.label}</div>
                   <div className="res">{v != null && v > 0 && <span>Net <b>{v - s}</b></span>}{v != null && E.r.scrScoring === 'stableford' && <span><b>{E.ptsFor(i, s, v)}</b> pts</span>}</div>
                 </div>
-                <Stepper v={v} par={E.PAR[i]} label="the team" disabled={!canScore} onSet={(x) => save(['t:' + team.key, 'strokes', 'h' + hole], x)} />
+                <Stepper v={v} par={E.PAR[i]} label="the team" blocked={blockMsg} onBlocked={toast} onSet={(x) => save(['t:' + team.key, 'strokes', 'h' + hole], x)} />
                 {canScore && <div className="links">{E.pickupOK && v !== 0 && <button type="button" onClick={() => save(['t:' + team.key, 'strokes', 'h' + hole], 0)}>Picked up</button>}{v != null && <button type="button" onClick={() => save(['t:' + team.key, 'strokes', 'h' + hole], null)}>Clear hole {hole}</button>}</div>}
               </div>
               {E.tracksDrives && driveRow(team)}
