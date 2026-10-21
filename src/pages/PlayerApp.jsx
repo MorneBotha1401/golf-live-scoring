@@ -7,8 +7,10 @@ import { errText, supabase } from '../lib/supabase.js';
 import { ConfirmButton, Header, LiveBadge, Loading, Sponsors, useHashTab, useSession, useToast } from '../components/ui.jsx';
 import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
-import { HelpButton, Tour, useTour } from '../components/Guide.jsx';
+import { Coach, Help, Tour, Welcome, useOnboarding } from '../components/Guide.jsx';
+import { playerHelp } from '../lib/helpContent.js';
 
+const FORMAT_SHORT = { stableford: 'Stableford', betterball: 'Betterball Stableford', alliance: '4-ball Alliance', scramble: 'American Scramble', scramble_drive: 'Scramble, own ball' };
 const get = (o, path) => path.reduce((a, k) => (a == null ? undefined : a[k]), o);
 function setIn(o, [a, b, c], v) { return { ...o, [a]: { ...(o[a] || {}), [b]: { ...(o[a]?.[b] || {}), [c]: v } } }; }
 function delIn(o, [a, b, c]) { const n = { ...o, [a]: { ...(o[a] || {}), [b]: { ...(o[a]?.[b] || {}) } } }; delete n[a][b][c]; return n; }
@@ -84,14 +86,14 @@ export default function PlayerApp() {
     }, 450);
   }, [d.event?.id, toast]);
 
-  const tour = useTour('player', !!me && tab === 'score');
+  const ob = useOnboarding('player', !!me && tab === 'score');
 
   if (d.loading || session === undefined) return <Loading />;
   if (!d.event) return <main><div className="wrap"><div className="card"><div className="empty"><b>Event not found</b>Open the personal link the organiser sent you.</div></div></div></main>;
   const ev = d.event;
   const header = (
     <Header title={ev.name} sub={me ? `${me.name}${me.group ? ' · Group ' + me.group : ''}` : d.club?.name} logo={ev.logo_url || d.club?.logo_url}
-      status={<LiveBadge event={ev} />} right={me ? <HelpButton onClick={() => { go('score'); tour.start(); }} label="How to use your scorecard" /> : null}
+      status={<LiveBadge event={ev} />} right={E ? <Help topics={playerHelp(E)} title="Help with your scorecard" intro={me ? 'Quick answers. Tap a question to open it.' : 'Open the personal link the organiser sent you to get your own scorecard.'} onTour={me ? () => { go('score'); ob.startTour(); } : undefined} /> : null}
       tabs={[['score', 'My scores'], ['board', 'Leaderboard'], ['cards', 'Scorecards']]} current={tab} onTab={go} />
   );
   if (!me) {
@@ -110,8 +112,8 @@ export default function PlayerApp() {
 
   const scr = E.fmt === 'scramble';
   const others = group.length > 1;
+  const myTeam = E.isTeam && me.group ? E.teamsOf().find((t) => t.key === E.teamKey(me)) : null;
   const steps = [
-    { target: null, title: `Welcome, ${first(me.name)}`, body: <><p>This is your personal scorecard for <b>{ev.name}</b>. It only works for you, so keep the link to yourself.</p><p>Here's how it works. It takes 30 seconds.</p></> },
     { target: '[data-tour="hole"]', title: 'Choose the hole', body: <p>Use the arrows to move between holes. You'll see the par, stroke index and distance for each tee{E.allianceLike ? ', plus how many scores count on that hole' : ''}.</p> },
     { target: '[data-tour="strip"]', title: 'Jump to any hole', body: <p>Tap a number to jump straight there. Shaded holes are complete. A <b className="under">red dot</b> means a score needs checking.</p> },
     scr
@@ -125,12 +127,29 @@ export default function PlayerApp() {
   return (
     <>
       {header}
-      <Tour steps={steps} open={tour.open} onClose={tour.close} />
+      <Welcome open={ob.welcome} title={`Welcome, ${first(me.name)}`} onTour={ob.startTour} onSkip={ob.skip}
+        intro={<p>This is your personal scorecard for <b>{ev.name}</b>. It only works for you, so keep the link to yourself.</p>}
+        facts={[
+          ['Format', E.fmt === 'stroke' ? (E.basis === 'gross' ? 'Medal, gross' : 'Medal, net') : FORMAT_SHORT[E.fmt]],
+          scr ? ['Team handicap', myTeam ? String(E.scrambleCalc(myTeam).th) : 'After groups are set'] : ['Your playing HC', String(E.handicaps(me).ph)],
+          ['Tee', E.teeOf(me).label || '–'],
+          ['Your group', me.group ? (others ? group.filter((p) => p.id !== me.id).map((p) => first(p.name)).join(', ') : `Group ${me.group}`) : 'Not set yet'],
+        ]}
+        steps={scr ? [
+          { title: 'After each hole, enter the team score', text: 'Tap + once for par, then adjust. Anyone in the team can enter it.' },
+          ...(E.tracksDrives ? [{ title: 'Tap whose drive you used', text: `Each player needs ${E.r.minDrives || 0} or more.` }] : []),
+          { title: 'Follow the leaderboard', text: 'It updates live as every team scores.' },
+        ] : [
+          { title: 'After each hole, enter your gross score', text: 'Tap + once for par, then adjust. Net and points work out by themselves.' },
+          ...(others ? [{ title: 'Enter your group\'s scores too', text: 'You mark the others. Matching scores get a ✓.' }] : []),
+          { title: 'Sign your card after 18 holes', text: others ? 'Your marker then attests it, and it locks.' : 'That locks it, like handing it in.' },
+        ]} />
+      <Tour steps={steps} open={ob.tour} onClose={ob.closeTour} />
       <main><div className="wrap">
         {banner}
         {tab === 'board' && <Leaderboard E={E} event={ev} club={d.club} tvHref={`/e/${slug}/tv`} highlight={me.id} />}
         {tab === 'cards' && <Scorecards E={E} initial={E.isTeam ? (me.group ? 't:' + E.teamKey(me) : 'all') : 'p:' + me.id} />}
-        {tab === 'score' && <ScoreEntry {...{ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload: d.reload }} />}
+        {tab === 'score' && <ScoreEntry {...{ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload: d.reload, paused: ob.welcome || ob.tour, eventId: ev.id }} />}
         <Sponsors event={ev} />
       </div></main>
     </>
@@ -174,7 +193,7 @@ function Stepper({ v, par, label, blocked, onBlocked, onSet }) {
   );
 }
 
-function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload }) {
+function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, cardOpen, setCardOpen, toast, reload, paused, eventId }) {
   const i = hole - 1;
   const team = E.isTeam && me.group ? E.teamsOf().find((t) => t.key === E.teamKey(me)) : null;
   const myCalc = E.indCalc(me);
@@ -234,9 +253,22 @@ function ScoreEntry({ E, me, group, hole, setHole, save, canScore, blockMsg, car
   const sign = async () => { const { error } = await supabase.rpc('sign_card', { p_player: me.id }); if (error) toast(errText(error)); else { toast('Card signed. Ask your marker to attest it.'); reload(); } };
   const attest = async (p) => { const { error } = await supabase.rpc('attest_card', { p_player: p.id }); if (error) toast(errText(error)); else { toast(`${p.name}'s card attested`); reload(); } };
   const others = group.filter((p) => p.id !== me.id);
+  const disputedHoles = []; for (let h = 1; h <= 18; h++) if (group.some((p) => E.holeState(p, h).st === 'disputed')) disputedHoles.push(h);
+  const toAttest = others.filter((p) => p.signed_at && !p.attested_at);
+  const scrollTo = (sel) => document.querySelector(sel)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const anyEntry = E.fmt === 'scramble' ? (team ? E.scrambleCalc(team).thru > 0 : false) : selfCount > 0;
+  const coach = [
+    { id: `dispute:${eventId}:${disputedHoles.join(',')}`, show: canScore && disputedHoles.length > 0 && !disputedHoles.includes(hole), title: `Hole ${disputedHoles.join(', ')} needs checking`, text: 'A player and their marker entered different scores. Agree on the right one, then tap "Use" or change your entry.', action: { label: `Go to hole ${disputedHoles[0]}`, onClick: () => setHole(disputedHoles[0]) } },
+    { id: 'dispute-here', show: canScore && disputedHoles.includes(hole), title: 'These two scores don\'t match', text: 'Agree on the right score with your group, then tap "Use …" to take the other number or change your own. Until then the hole is flagged for the committee.' },
+    { id: `attest:${eventId}:${toAttest.map((p) => p.id).join(',')}`, show: E.fmt !== 'scramble' && toAttest.length > 0, title: `${toAttest.map((p) => first(p.name)).join(' and ')} signed their card`, text: 'As their marker, check their scores, then attest the card at the bottom of this page.', action: { label: 'Show me', onClick: () => scrollTo('[data-tour="finish"]') } },
+    { id: `sign:${eventId}`, show: canScore && E.fmt !== 'scramble' && selfCount === 18 && !myDisputes && !me.signed_at, title: 'All 18 holes in', text: 'Check your card, then sign it so your marker can attest it.', action: { label: 'Sign my card', onClick: () => scrollTo('[data-tour="finish"]') } },
+    { id: 'first-save', show: canScore && anyEntry, title: 'Saved', text: E.fmt === 'scramble' ? 'Scores save the moment you tap. Your whole team sees them straight away.' : (others.length ? 'Scores save the moment you tap. When your marker enters the same score, the hole gets ✓ Agreed.' : 'Scores save the moment you tap. No save button needed.') },
+    { id: 'marker-hint', show: canScore && others.length > 0 && E.fmt !== 'scramble' && selfCount >= 1 && others.every((p) => E.entries[p.id]?.[hole]?.marker == null) && E.entries[me.id]?.[hole]?.self != null, title: 'Now mark your group', text: `Enter ${others.map((p) => first(p.name)).join(', ')}'s score for this hole too. That's the marker's check on their card.` },
+  ];
 
   return (
     <div className="stack">
+      <Coach items={coach} paused={paused} />
       <HoleHeader {...{ E, hole, setHole, group, team }} />
       <div className="card">
         {E.fmt === 'scramble' && team ? (() => {

@@ -62,7 +62,7 @@ export default function Leaderboard({ E, event, club, tvHref, highlight, showExp
       <div className="meta"><span className="pill">{FORMATS[E.fmt].label}</span>{E.describe()}</div>
       <Filters E={E} f={f} />
       {showExport && (
-        <div className="btns noprint">
+        <div className="btns noprint" data-tour="lbexport">
           {tvHref && <a className="btn" href={tvHref} target="_blank" rel="noreferrer">Clubhouse TV display</a>}
           <button type="button" className="btn ghost small" disabled={!!busy} onClick={() => run('pdf')}>{busy === 'pdf' ? 'Preparing…' : 'Download PDF to print'}</button>
           <button type="button" className="btn ghost small" disabled={!!busy} onClick={() => run('png')}>{busy === 'png' ? 'Preparing…' : 'Download image'}</button>
@@ -71,7 +71,7 @@ export default function Leaderboard({ E, event, club, tvHref, highlight, showExp
         </div>
       )}
       {copyText && <div className="card form"><p className="note">Select the text below and copy it.</p><textarea readOnly value={copyText} rows={8} onFocus={(e) => e.target.select()} /></div>}
-      <div className="card">
+      <div className="card" data-tour="lbtable">
         {!m.rows.length ? <div className="empty"><b>No players in this selection</b>Pick another filter above.</div> : (
           <table className="lb">
             <thead><tr><th>Pos</th><th>{m.team ? 'Team' : 'Player'}</th><th className="c">{hd[0]}</th>{hd[1] && <th className="c">{hd[1]}</th>}<th style={{ textAlign: 'right' }}>{hd[2]}</th></tr></thead>

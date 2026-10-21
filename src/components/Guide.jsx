@@ -1,5 +1,6 @@
 // First-time guidance: spotlight tours, setup checklists and a help button.
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -131,6 +132,146 @@ export function Tip({ id, children }) {
     <div className="tip" role="note">
       <span className="tip-i" aria-hidden>i</span><div>{children}</div>
       <button type="button" className="tip-x" aria-label="Dismiss tip" onClick={() => { store.set('tip:' + id, '1'); setGone(true); }}>×</button>
+    </div>
+  );
+}
+
+/* ---------------- welcome screens ---------------- */
+
+/** First visit: a welcome card first, then (if they want) the spotlight tour. */
+export function useOnboarding(key, ready = true) {
+  const [welcome, setWelcome] = useState(false);
+  const [tour, setTour] = useState(false);
+  useEffect(() => {
+    if (ready && !store.get('tour:' + key)) { const t = setTimeout(() => setWelcome(true), 500); return () => clearTimeout(t); }
+    return undefined;
+  }, [key, ready]);
+  const done = () => store.set('tour:' + key, '1');
+  return {
+    welcome, tour,
+    startTour: () => { setWelcome(false); setTour(true); },
+    skip: () => { done(); setWelcome(false); },
+    closeTour: () => { done(); setTour(false); },
+  };
+}
+export const seenTour = (key) => !!store.get('tour:' + key);
+
+/** steps: [{ title, text }] — a real sequence, so it is numbered. */
+export function Welcome({ open, title, intro, steps = [], facts = [], onTour, onSkip, tourLabel = 'Show me how', skipLabel = "I'll find my way" }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const k = (e) => { if (e.key === 'Escape') onSkip(); };
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+  }, [open, onSkip]);
+  if (!open) return null;
+  return (
+    <div className="tour" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <div className="tour-dim" />
+      <div className="welcome-card">
+        <h2 id="welcome-title">{title}</h2>
+        {intro && <div className="tour-body">{intro}</div>}
+        {facts.length > 0 && <dl className="welcome-facts">{facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>}
+        {steps.length > 0 && (
+          <ol className="welcome-steps">
+            {steps.map((s, i) => <li key={i}><span className="ws-n" aria-hidden>{i + 1}</span><div><b>{s.title}</b>{s.text && <span>{s.text}</span>}</div></li>)}
+          </ol>
+        )}
+        <div className="tour-nav">
+          <button type="button" className="link" onClick={onSkip}>{skipLabel}</button>
+          {onTour && <button type="button" className="btn" onClick={onTour} autoFocus>{tourLabel}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- help panel ---------------- */
+
+// Tiny formatter for help answers: blank-line paragraphs, **bold**.
+function rich(text) {
+  return String(text).split(/\n+/).map((para, i) => (
+    <p key={i}>{para.split(/(\*\*[^*]+\*\*)/g).map((part, j) => (part.startsWith('**') && part.endsWith('**') ? <b key={j}>{part.slice(2, -2)}</b> : part))}</p>
+  ));
+}
+
+/** topics: [{ q, a }] where a is plain text with **bold** and line breaks. */
+export function HelpPanel({ open, onClose, title = 'Help', intro, topics = [], onTour, tourLabel = 'Show me around' }) {
+  const [q, setQ] = useState('');
+  useEffect(() => { if (!open) setQ(''); }, [open]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const k = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+  }, [open, onClose]);
+  if (!open) return null;
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const list = topics.filter((t) => { const hay = (t.q + ' ' + t.a).toLowerCase(); return words.every((w) => hay.includes(w)); });
+  // Rendered at the end of the page so it sits above everything, including the sticky header.
+  return createPortal(
+    <div className="help-wrap" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <aside className="help-panel">
+        <div className="spread">
+          <h2 id="help-title">{title}</h2>
+          <button type="button" className="tip-x" aria-label="Close help" onClick={onClose}>×</button>
+        </div>
+        {intro && <p className="note">{intro}</p>}
+        {onTour && <button type="button" className="btn" onClick={() => { onClose(); onTour(); }}>{tourLabel}</button>}
+        <input className="pick" type="search" placeholder="Search help, e.g. wrong score" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search help" autoFocus />
+        <div className="help-list">
+          {list.map((t) => (
+            <details key={t.q} open={words.length > 0 && list.length <= 2}>
+              <summary>{t.q}</summary>
+              <div className="help-a">{rich(t.a)}</div>
+            </details>
+          ))}
+          {!list.length && <p className="note">Nothing matches "{q}". Try another word, like score, link, group or TV.</p>}
+        </div>
+      </aside>
+    </div>,
+    document.body,
+  );
+}
+
+/** A help button plus its panel, in one piece for headers. */
+export function Help({ topics, title, intro, onTour, tourLabel, label = 'Help' }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <HelpButton onClick={() => setOpen(true)} label={label} />
+      <HelpPanel open={open} onClose={() => setOpen(false)} {...{ topics, title, intro, onTour, tourLabel }} />
+    </>
+  );
+}
+
+/* ---------------- one-time prompts at the right moment ---------------- */
+
+/**
+ * items: [{ id, show, title, text, action?: { label, onClick } }]
+ * Shows the first item whose condition is true and which hasn't been dismissed on this device.
+ */
+export function Coach({ items, paused }) {
+  const [, bump] = useState(0);
+  const item = items.find((x) => x.show && !store.get('coach:' + x.id));
+  if (!item || paused) return null;
+  const dismiss = () => { store.set('coach:' + item.id, '1'); bump((n) => n + 1); };
+  return (
+    <div className="coach" role="status" aria-live="polite">
+      <div className="coach-body"><b>{item.title}</b>{item.text && <span>{item.text}</span>}</div>
+      <div className="row">
+        {item.action && <button type="button" className="btn small" onClick={() => { item.action.onClick(); dismiss(); }}>{item.action.label}</button>}
+        <button type="button" className="btn ghost small" onClick={dismiss}>Got it</button>
+      </div>
+    </div>
+  );
+}
+
+/** "Next:" nudge pointing at the obvious next step. */
+export function NextStep({ children, action }) {
+  return (
+    <div className="nextstep" role="note">
+      <span className="ns-arrow" aria-hidden>→</span>
+      <div><b>Next: </b>{children}</div>
+      {action && <button type="button" className="btn small" onClick={action.onClick}>{action.label}</button>}
     </div>
   );
 }

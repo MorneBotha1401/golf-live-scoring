@@ -11,7 +11,8 @@ import { ConfirmButton, CopyField, Header, LiveBadge, Loading, fmtDate, useHashT
 import SettingsForm from '../components/SettingsForm.jsx';
 import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
-import { Checklist, HelpButton, Tip, Tour, useTour } from '../components/Guide.jsx';
+import { Checklist, Help, NextStep, Tip, Tour, Welcome, seenTour, useOnboarding, useTour } from '../components/Guide.jsx';
+import { eventAdminHelp } from '../lib/helpContent.js';
 
 const flag = { get: (k) => { try { return localStorage.getItem(k) === '1'; } catch { return false; } }, set: (k) => { try { localStorage.setItem(k, '1'); } catch { /* ignore */ } } };
 
@@ -36,7 +37,9 @@ export default function EventAdmin() {
     supabase.from('club_members').select('user_id').eq('club_id', d.event.club_id).eq('user_id', session.user.id).then(({ data }) => setIsClubAdmin(!!data?.length));
   }, [session, d.event?.club_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tour = useTour('eventadmin', !!d.event && isRealUser(session));
+  const ob = useOnboarding('eventadmin', !!d.event && isRealUser(session));
+  const mainSeen = !ob.welcome && !ob.tour && seenTour('eventadmin');
+  const tabTour = useTour('eventadmin-' + tab, mainSeen && !!d.event && ['players', 'links', 'committee', 'board'].includes(tab));
   const [, bump] = useState(0);
 
   if (session === undefined || d.loading) return <Loading />;
@@ -60,22 +63,64 @@ export default function EventAdmin() {
   ];
   const markSent = () => { if (!sent) { flag.set('linksSent:' + ev.id); bump((x) => x + 1); } };
   const steps = [
-    { target: null, title: 'Your event control room', body: <><p>Everything for <b>{ev.name}</b> is run from here: the field, the links players use, the live scores and the results.</p><p>A quick tour of where everything is.</p></> },
     { target: '[data-tour="checklist"]', title: 'Follow the checklist', body: <p>The checklist shows what to do next and ticks itself off as you go. The highlighted step is the next one. It folds away once everything's done.</p>, before: () => go('setup') },
     { target: '[data-tour="tabs"]', title: 'The tabs', body: <><p><b>Setup</b>: name, date, format, rules, and opening and closing scoring.</p><p><b>Logos &amp; sponsors</b> · <b>Players</b>: add, import, group, approve · <b>Links &amp; QR</b>: send each player their link · <b>Committee</b>: disputes and official scores · <b>Leaderboard</b>.</p></> },
     { target: '[data-tour="status"]', title: 'Nothing is public until you open scoring', body: <p>In Draft you can set everything up and players can check their details. On the day, press <b>Open scoring</b>. Afterwards, <b>Close scoring</b> to lock the results, then move the event to the archive.</p>, before: () => go('setup') },
-    { target: '.helpbtn', title: 'Help is always here', body: <p>Tap <b>?</b> any time to see this tour again.</p> },
+    { target: '.helpbtn', title: 'Help is always here', body: <p>Tap <b>?</b> any time for quick answers, or to take this tour again. Each tab also shows you around the first time you open it.</p> },
   ];
+
+  const tabSteps = {
+    players: [
+      { target: '[data-tour="addplayer"]', title: 'Add players one by one', body: <p>Name and handicap index are all you need. The tee follows gender, and you can change it.</p> },
+      { target: '[data-tour="import"]', title: 'Or import the whole field', body: <p>Choose an Excel or CSV file, or paste rows straight from Excel. You'll see a preview, with any problem rows flagged, before anything is saved. <b>Download template</b> shows the columns.</p> },
+      { target: '[data-tour="field"]', title: 'Edit the field here', body: <p>Change any name, handicap, tee or group right in the table; it saves when you click away. Give each four-ball the same <b>group number</b>. Approve self-registered players here too.</p> },
+    ],
+    links: [
+      { target: '[data-tour="eventlinks"]', title: 'Links for everyone else', body: <p>The <b>leaderboard</b> link is for spectators, the <b>TV</b> link is for the clubhouse screen{ev.self_register ? ', and the registration QR lets players sign themselves up' : ''}. Each has a QR code and a printable A4 poster.</p> },
+      { target: '[data-tour="qrsheet"]', title: 'Send each player their own link', body: <p>Print the <b>QR sheet</b> and hand out codes at registration, or download the links for a mail merge.</p> },
+      { target: '[data-tour="sendlinks"]', title: 'Or send them one at a time', body: <p>Tap <b>WhatsApp</b> or <b>Email</b> next to a player. The message and link are filled in for you. <b>New link</b> replaces a link that went astray.</p> },
+    ],
+    committee: [
+      { target: '[data-tour="stats"]', title: 'The round at a glance', body: <p>How many have started, finished and signed, and how many holes are disputed.</p> },
+      { target: '[data-tour="attention"]', title: 'Sort out problems', body: <p>Disagreements between player and marker, unlikely scores, missing holes and unsigned cards land here. One tap on <b>Use 5</b> or <b>Use 6</b> sets the official score.</p> },
+      { target: '[data-tour="official"]', title: 'Correct any hole', body: <p>Set an official score for any player and hole, even after a card is signed. It overrides both entries.</p> },
+      { target: '[data-tour="log"]', title: 'Every change is recorded', body: <p>Who entered what, and when. Useful if there's a question afterwards.</p> },
+    ],
+    board: [
+      { target: '[data-tour="lbexport"]', title: 'Share the results', body: <p>Download a <b>PDF</b> to print, an <b>image</b> for WhatsApp, or copy the results as text. If you pick a division or category first, you get just that list.</p> },
+      { target: '[data-tour="lbtable"]', title: 'Tap a row for the card', body: <p>Every row opens that player's or team's card, hole by hole, with net scores and points.</p> },
+    ],
+  };
+  const sentNow = sent;
+  let next = null;
+  if (tab === 'players' && active.length && !grouped) next = <NextStep>Give each four-ball the same group number in the <b>Group</b> column of the field below.</NextStep>;
+  else if (tab === 'players' && active.length && grouped && !sentNow) next = <NextStep action={{ label: 'Open Links & QR', onClick: () => go('links') }}>Send every player their personal link.</NextStep>;
+  else if (tab === 'brand' && !active.length) next = <NextStep action={{ label: 'Add players', onClick: () => go('players') }}>Add the players.</NextStep>;
+  else if (tab === 'links' && sentNow && ev.status === 'draft') next = <NextStep action={{ label: 'Go to Setup', onClick: () => go('setup') }}>On the day, open scoring so players can start entering scores.</NextStep>;
+  else if (tab === 'setup' && ev.status === 'live') next = <NextStep action={{ label: 'Open TV display', onClick: () => { flag.set('tvOpened:' + ev.id); bump((x) => x + 1); window.open(`/e/${ev.slug}/tv`, '_blank', 'noopener'); } }}>Scoring is open. Put the leaderboard on the clubhouse TV, and keep an eye on <b>Committee</b> for disputed scores.</NextStep>;
+  else if (tab === 'setup' && ev.status === 'finished') next = <NextStep action={{ label: 'Open Leaderboard', onClick: () => go('board') }}>Download or share the results, then move the event to the archive below.</NextStep>;
+  else if (tab === 'committee' && ev.status === 'live' && E.active.length && E.active.every((p) => p.attested_at)) next = <NextStep action={{ label: 'Go to Setup', onClick: () => go('setup') }}>Every card is signed and attested. Close scoring to finalise the results.</NextStep>;
 
   return (
     <>
       <Header title={ev.name} sub={`${d.club?.name || ''} · ${fmtDate(ev.event_date)} · Event admin`} logo={ev.logo_url || d.club?.logo_url} status={<LiveBadge event={ev} />}
-        right={<span className="hdrlinks">{isClubAdmin ? <Link to={`/admin/club/${ev.club_id}`}>Club</Link> : <Link to="/admin">My events</Link>}<HelpButton onClick={tour.start} label="Show me around" /></span>}
+        right={<span className="hdrlinks">{isClubAdmin ? <Link to={`/admin/club/${ev.club_id}`}>Club</Link> : <Link to="/admin">My events</Link>}<Help topics={eventAdminHelp} title="Help running this event" intro="Quick answers. Tap a question to open it." onTour={ob.startTour} /></span>}
         tabs={[['setup', 'Setup'], ['brand', 'Logos & sponsors'], ['players', `Players (${d.players.length}${pending ? ', ' + pending + ' to approve' : ''})`], ['links', 'Links & QR'], ['committee', `Committee${issues ? ' (' + issues + ')' : ''}`], ['board', 'Leaderboard']]}
         current={tab} onTab={go} />
-      <Tour steps={steps} open={tour.open} onClose={tour.close} />
+      <Welcome open={ob.welcome} title="Your event control room" onTour={ob.startTour} onSkip={ob.skip}
+        intro={<p>Everything for <b>{ev.name}</b> is run from here. Getting it ready takes five steps:</p>}
+        steps={[
+          { title: 'Check the format and rules', text: 'Setup tab: format, handicap allowance, divisions, countback.' },
+          { title: 'Add the players', text: 'One by one, or import an Excel list. Give each four-ball a group number.' },
+          { title: 'Send each player their link', text: 'Links & QR tab: WhatsApp, email or a printed QR sheet.' },
+          { title: 'Open scoring on the day', text: 'Until then it\'s a private draft.' },
+          { title: 'Close scoring and share the results', text: 'PDF, image or text, then archive the event.' },
+        ]} />
+      <Tour steps={steps} open={ob.tour} onClose={ob.closeTour} />
+      <Tour steps={tabSteps[tab] || []} open={tabTour.open && !!tabSteps[tab]} onClose={tabTour.close} />
       <main><div className="wrap wide">
         {tab !== 'board' && <div data-tour="checklist"><Checklist id={'event:' + ev.id} title="Get this event ready" items={checklist} intro="Work down the list. Steps tick themselves off as you complete them." /></div>}
+        {next}
         {ev.status === 'draft' && tab !== 'setup' && <div className="banner warn spread"><span><b>Draft:</b> players can open their links but can't enter scores until you open scoring.</span><button type="button" className="btn small" onClick={() => go('setup')}>Go to Setup</button></div>}
         {tab === 'setup' && <SetupTab {...{ d, E, ev, toast, isClubAdmin }} />}
         {tab === 'brand' && <BrandTab {...{ ev, toast, reload: d.reload }} />}
@@ -228,7 +273,7 @@ function PlayersTab({ d, E, ev, toast, priv, loadPriv }) {
 
   return (
     <div className="stack">
-      <form className="card form" onSubmit={add}>
+      <form className="card form" onSubmit={add} data-tour="addplayer">
         <h2>Add a player</h2>
         <Tip id="players-groups">Give everyone in the same four-ball the <b>same group number</b>. Players can then mark each other, and team formats know who plays together. Use 0 if you'll group them later.</Tip>
         <div className="grid2">
@@ -245,7 +290,7 @@ function PlayersTab({ d, E, ev, toast, priv, loadPriv }) {
         <div><button className="btn" disabled={busy}>{busy ? 'Adding…' : 'Add player'}</button></div>
       </form>
 
-      <div className="card form">
+      <div className="card form" data-tour="import">
         <h2>Import from a spreadsheet</h2>
         <p className="note">Excel (.xlsx) or CSV with a <b>Name</b> and a <b>Handicap index</b> column. Optional columns: Gender, Category (junior / senior), Tee, Group, Pair, Mobile, Email. Afrikaans headings work too.</p>
         <div className="btns">
@@ -265,7 +310,7 @@ function PlayersTab({ d, E, ev, toast, priv, loadPriv }) {
         )}
       </div>
 
-      <div className="card">
+      <div className="card" data-tour="field">
         <div className="pad spread">
           <h2>Field ({d.players.length})</h2>
           <div className="row">
@@ -331,7 +376,7 @@ function LinksTab({ d, E, ev, toast, priv, loadPriv, markSent }) {
   };
   return (
     <div className="stack">
-      <div className="card form">
+      <div className="card form" data-tour="eventlinks">
         <h2>Event links</h2>
         <QrBox url={`${origin()}/e/${ev.slug}`} title="Live leaderboard" line="For spectators and the clubhouse. Anyone with this link can follow scores." ev={ev} club={d.club} />
         <QrBox url={`${origin()}/e/${ev.slug}/tv`} title="Clubhouse TV display" line="Open on the clubhouse TV's browser or a laptop connected to it." ev={ev} club={d.club} />
@@ -345,12 +390,12 @@ function LinksTab({ d, E, ev, toast, priv, loadPriv, markSent }) {
           <p className="note">Each player gets their own private link. Opening it on their phone signs them in as that player, for this event only. Send by WhatsApp or email, or print the QR sheet and hand each player their code at registration.</p>
           <div className="row">
             <select className="pick" style={{ width: 180 }} value={grp} onChange={(e) => setGrp(e.target.value)} aria-label="Group"><option value="all">All groups</option>{groups.map((g) => <option key={g} value={String(g)}>{g ? 'Group ' + g : 'Not in a group'}</option>)}</select>
-            <button type="button" className="btn" disabled={!items.length || !!busy} onClick={async () => { setBusy('qr'); markSent(); try { await playerQrSheet({ event: ev, items }); } catch { toast("Couldn't build the PDF"); } setBusy(''); }}>{busy === 'qr' ? 'Preparing…' : `Download QR sheet (${items.length})`}</button>
+            <button type="button" data-tour="qrsheet" className="btn" disabled={!items.length || !!busy} onClick={async () => { setBusy('qr'); markSent(); try { await playerQrSheet({ event: ev, items }); } catch { toast("Couldn't build the PDF"); } setBusy(''); }}>{busy === 'qr' ? 'Preparing…' : `Download QR sheet (${items.length})`}</button>
             <button type="button" className="btn ghost" disabled={!items.length} onClick={() => { markSent(); saveBlob(linksCsv(items), slugify(ev.name) + '-player-links.csv'); }}>Download links (CSV)</button>
           </div>
           <p className="note">The CSV has every player's name, mobile, email and link, ready for a mail merge or bulk WhatsApp tool.</p>
         </div>
-        <div className="tscroll"><table className="list">
+        <div className="tscroll" data-tour="sendlinks"><table className="list">
           <thead><tr><th>Player</th><th>Group</th><th>Link</th><th>Send</th><th /></tr></thead>
           <tbody>{people.map((p) => {
             const pr = priv[p.id]; if (!pr) return null; const url = playerUrl(pr.token); const n = waNumber(pr.phone);
@@ -391,14 +436,14 @@ function CommitteeTab({ d, E, ev, toast }) {
 
   return (
     <div className="stack">
-      <div className="grid2">
+      <div className="grid2" data-tour="stats">
         {[['Players', E.active.length], ['Started', started], ['Finished 18', finished], ['Signed & attested', attested], ['Disputed holes', disputes.length]].map(([l, v]) => (
           <div key={l} className="card pad"><div className="note">{l}</div><div style={{ fontFamily: 'var(--display)', fontSize: '2rem', fontWeight: 700 }} className={l === 'Disputed holes' && v ? 'under' : ''}>{v}</div></div>
         ))}
       </div>
 
       <div className="card">
-        <div className="pad stack"><h2>Needs attention</h2><Tip id="committee-how">When a player and their marker enter different scores for a hole, it appears here. Pick the right one, or set an official score below. The leaderboard updates straight away.</Tip></div>
+        <div className="pad stack" data-tour="attention"><h2>Needs attention</h2><Tip id="committee-how">When a player and their marker enter different scores for a hole, it appears here. Pick the right one, or set an official score below. The leaderboard updates straight away.</Tip></div>
         {!issues.length ? <div className="empty">Nothing to check right now.</div> : (
           <div className="tscroll"><table className="list"><tbody>
             {issues.map((x, i) => (
@@ -415,7 +460,7 @@ function CommitteeTab({ d, E, ev, toast }) {
         )}
       </div>
 
-      <div className="card form">
+      <div className="card form" data-tour="official">
         <h2>Set an official score</h2>
         <p className="note">A committee score overrides both the player's and the marker's entry. Leave the score empty to remove the committee score.</p>
         <div className="grid2">
@@ -430,7 +475,7 @@ function CommitteeTab({ d, E, ev, toast }) {
       </div>
 
       <div className="card">
-        <div className="pad"><h2>Recent changes</h2></div>
+        <div className="pad" data-tour="log"><h2>Recent changes</h2></div>
         {!log.length ? <div className="empty">No score changes yet.</div> : (
           <div className="tscroll"><table className="list"><thead><tr><th>Time</th><th>Player / team</th><th>Hole</th><th>Entry</th><th>Change</th><th>By</th></tr></thead><tbody>
             {log.map((l) => (

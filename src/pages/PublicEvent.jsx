@@ -5,7 +5,8 @@ import { makeEngine } from '../lib/engine.js';
 import { Header, LiveBadge, Loading, Sponsors, fmtDate, useHashTab } from '../components/ui.jsx';
 import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
-import { Tip } from '../components/Guide.jsx';
+import { Help, Tip } from '../components/Guide.jsx';
+import { spectatorHelp } from '../lib/helpContent.js';
 
 export default function PublicEvent() {
   const { slug } = useParams();
@@ -17,7 +18,7 @@ export default function PublicEvent() {
   const ev = d.event;
   return (
     <>
-      <Header title={ev.name} sub={`${d.club?.name || ''} · ${fmtDate(ev.event_date)}`} logo={ev.logo_url || d.club?.logo_url} status={<LiveBadge event={ev} />}
+      <Header title={ev.name} sub={`${d.club?.name || ''} · ${fmtDate(ev.event_date)}`} logo={ev.logo_url || d.club?.logo_url} status={<LiveBadge event={ev} />} right={<Help topics={spectatorHelp} title="Reading the leaderboard" />}
         tabs={[['board', 'Leaderboard'], ['cards', 'Scorecards']]} current={tab} onTab={go} />
       <main><div className="wrap">
         {ev.self_register && ['draft', 'live'].includes(ev.status) && (

@@ -51,6 +51,11 @@ export default function JoinPage() {
         {!open ? <div className="card"><div className="empty"><b>Registration is closed</b>Ask the organiser to add you to the field.</div></div> : (
           <form className="card form" onSubmit={submit}>
             <h2>Register to play</h2>
+            <ol className="howto">
+              <li><b>Fill in your details</b><span>Name and handicap index are all that's needed.</span></li>
+              <li><b>{ev.auto_approve ? 'You go straight onto the field' : 'The organiser approves you'}</b><span>{ev.auto_approve ? 'No waiting.' : 'You can open your card meanwhile, but not score yet.'}</span></li>
+              <li><b>This phone opens your scorecard</b><span>Bookmark the page or add it to your home screen.</span></li>
+            </ol>
             <p className="note">{ev.auto_approve ? "You'll go straight onto the field." : 'The organiser will approve your entry before you can score.'} After registering, this phone opens your scorecard.</p>
             <label className="f">Full name<input required minLength={2} maxLength={60} value={f.name} onChange={set('name')} autoComplete="name" /></label>
             <div className="grid2">

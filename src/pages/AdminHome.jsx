@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { errText, isRealUser, supabase } from '../lib/supabase.js';
 import { Header, Loading, fmtDate, statusLabel, useSession } from '../components/ui.jsx';
+import { Help } from '../components/Guide.jsx';
+import { organiserHelp } from '../lib/helpContent.js';
 
 export default function AdminHome() {
   const session = useSession(); const nav = useNavigate();
@@ -30,7 +32,7 @@ export default function AdminHome() {
 
   return (
     <>
-      <Header title="My clubs & events" sub={session.user.email} right={<span className="hdrlinks"><button type="button" onClick={() => supabase.auth.signOut()}>Sign out</button></span>} />
+      <Header title="My clubs & events" sub={session.user.email} right={<span className="hdrlinks"><button type="button" onClick={() => supabase.auth.signOut()}>Sign out</button><Help topics={organiserHelp} title="Getting started" intro="Quick answers for organisers." /></span>} />
       <main><div className="wrap">
         {clubs === null ? <Loading /> : (
           <>

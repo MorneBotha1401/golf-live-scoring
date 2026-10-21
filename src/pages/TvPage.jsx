@@ -13,6 +13,10 @@ export default function TvPage() {
   const [tick, setTick] = useState(0);
   const [clock, setClock] = useState(clockStr());
   const [vh, setVh] = useState(window.innerHeight);
+  // First time on this screen: a short hint, then it gets out of the way.
+  const [hint, setHint] = useState(() => { try { return !localStorage.getItem('tvhint'); } catch { return true; } });
+  const hideHint = () => { setHint(false); try { localStorage.setItem('tvhint', '1'); } catch { /* ignore */ } };
+  useEffect(() => { if (!hint) return undefined; const t = setTimeout(hideHint, 15000); return () => clearTimeout(t); }, [hint]);
 
   useEffect(() => { const a = setInterval(() => setTick((t) => t + 1), 12000); const b = setInterval(() => setClock(clockStr()), 1000); const r = () => setVh(window.innerHeight); window.addEventListener('resize', r);
     let lock; const wake = () => { try { navigator.wakeLock?.request('screen').then((l) => (lock = l)).catch(() => {}); } catch { /* not supported */ } };
@@ -67,6 +71,12 @@ export default function TvPage() {
         <div className="tvdots">{screens.length > 1 && screens.map((_, i) => <i key={i} className={i === cur.i ? 'on' : ''} />)}</div>
         <span>{E.cbText}</span>
       </div>
+      {hint && (
+        <div className="tvhint" role="note">
+          <span>This screen updates by itself and moves to the next page or division every 12 seconds. Click <b>Full screen</b> (bottom right) for the best view.</span>
+          <button type="button" onClick={hideHint}>Got it</button>
+        </div>
+      )}
       <div className="tvctl">
         <button type="button" onClick={() => { try { document.documentElement.requestFullscreen?.(); } catch { /* not supported */ } }}>Full screen</button>
         <Link to={`/e/${slug}`}>Exit TV</Link>

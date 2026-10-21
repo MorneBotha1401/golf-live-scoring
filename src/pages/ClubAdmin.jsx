@@ -4,7 +4,8 @@ import { errText, isRealUser, supabase } from '../lib/supabase.js';
 import { uploadLogo } from '../lib/upload.js';
 import { PRESETS } from '../lib/presets.js';
 import { FORMATS, DEFAULT_SETTINGS } from '../lib/engine.js';
-import { Checklist, HelpButton, Tip, Tour, useTour } from '../components/Guide.jsx';
+import { Checklist, Help, Tip, Tour, useTour } from '../components/Guide.jsx';
+import { clubAdminHelp } from '../lib/helpContent.js';
 import { ConfirmButton, CopyField, Header, Loading, fmtDate, statusLabel, useHashTab, useSession, useToast } from '../components/ui.jsx';
 
 export default function ClubAdmin() {
@@ -55,7 +56,7 @@ export default function ClubAdmin() {
   return (
     <>
       <Header title={club.name} sub={'Club admin' + (club.location ? ' · ' + club.location : '')} logo={club.logo_url}
-        right={<span className="hdrlinks"><Link to="/admin">All clubs</Link><HelpButton onClick={tour.start} label="Show me around" /></span>}
+        right={<span className="hdrlinks"><Link to="/admin">All clubs</Link><Help topics={clubAdminHelp} title="Help running your club" intro="Quick answers. Tap a question to open it." onTour={tour.start} /></span>}
         tabs={[['events', 'Events'], ['archive', `Archive (${archived.length})`], ['courses', 'Courses'], ['people', 'Admins & invites'], ['club', 'Club details']]} current={tab} onTab={go} />
       <Tour steps={steps} open={tour.open} onClose={tour.close} />
       <main><div className="wrap">
