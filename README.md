@@ -87,6 +87,31 @@ Every change pushed to GitHub redeploys the site automatically.
 
 ---
 
+## Selling it: self-service sign-up and payment
+
+The home page (`/`) is the public website. Organisers click **Set up your event**, sign in with their email, create their organisation and event, and pay. Paying unlocks scoring straight away, with no manual steps.
+
+**Price.** Each event day costs the amount set on the owner dashboard (the default is $50). Multi-day events pay once per day. Setting up is free; scoring can be opened from the day before the event until the day after its last day.
+
+**One-time setup**
+1. Supabase → SQL editor: run `supabase/migrations/002_commercial.sql`.
+2. Make yourself the owner (use your own email):
+   `insert into platform_admins (user_id) select id from auth.users where email = 'you@example.com';`
+3. Netlify → Site configuration → Environment variables:
+   - `SUPABASE_SERVICE_ROLE_KEY` (Supabase → Project settings → API keys → service_role)
+   - `STRIPE_SECRET_KEY` (start with the `sk_test_` key)
+   - `STRIPE_WEBHOOK_SECRET` (from step 4)
+   - optional: `PAYSTACK_SECRET_KEY`, which offers Paystack in ZAR to South African organisers
+4. Stripe → Developers → Webhooks → Add endpoint:
+   `https://YOUR-SITE/.netlify/functions/stripe-webhook`, with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded` and `charge.refunded`.
+5. Redeploy on Netlify. Pay for a test event with card `4242 4242 4242 4242`, then switch to the live keys.
+6. Supabase → Authentication → SMTP: add a real email sender. The built-in sender only allows a couple of emails an hour.
+7. Fill in your company details in `src/lib/brand.js`, and have a lawyer check `/terms`, `/privacy` and `/refunds`.
+
+**Owner dashboard (`/platform`):** revenue and payments, every event (with **Make free**), organisations (set one to Free), the shared course library, the price, and free mode.
+
+**Refunds:** issue them in Stripe. The webhook records the refund automatically.
+
 ## Run it on your own computer (optional)
 
 ```bash

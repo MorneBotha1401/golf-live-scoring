@@ -10,11 +10,19 @@ export default function TvPage() {
   const { slug } = useParams();
   const d = useEventData({ slug });
   const E = useMemo(() => (d.event ? makeEngine(d) : null), [d.event, d.course, d.players, d.scores, d.teamScores]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (d.loading) return <div className="tv"><div className="tvempty">Connecting to live scores…</div></div>;
+  if (!E) return <div className="tv"><div className="tvempty">This event isn't available yet.</div></div>;
+  return <TvScreen E={E} event={d.event} club={d.club} exitTo={`/e/${slug}`} />;
+}
+
+/** The clubhouse scoreboard itself; also used by the live demo with sample data. */
+export function TvScreen({ E, event, club, exitTo, exitLabel = 'Exit TV', showHint = true }) {
+  const d = { event, club };
   const [tick, setTick] = useState(0);
   const [clock, setClock] = useState(clockStr());
   const [vh, setVh] = useState(window.innerHeight);
   // First time on this screen: a short hint, then it gets out of the way.
-  const [hint, setHint] = useState(() => { try { return !localStorage.getItem('tvhint'); } catch { return true; } });
+  const [hint, setHint] = useState(() => { if (!showHint) return false; try { return !localStorage.getItem('tvhint'); } catch { return true; } });
   const hideHint = () => { setHint(false); try { localStorage.setItem('tvhint', '1'); } catch { /* ignore */ } };
   useEffect(() => { if (!hint) return undefined; const t = setTimeout(hideHint, 15000); return () => clearTimeout(t); }, [hint]);
 
@@ -23,9 +31,6 @@ export default function TvPage() {
     wake(); const vis = () => document.visibilityState === 'visible' && wake(); document.addEventListener('visibilitychange', vis);
     return () => { clearInterval(a); clearInterval(b); window.removeEventListener('resize', r); document.removeEventListener('visibilitychange', vis); try { lock?.release(); } catch { /* ignore */ } };
   }, []);
-
-  if (d.loading) return <div className="tv"><div className="tvempty">Connecting to live scores…</div></div>;
-  if (!E) return <div className="tv"><div className="tvempty">This event isn't available yet.</div></div>;
 
   const screens = [{ cat: 'all', div: 'all' }, ...E.divsPresent().map((dv) => ({ cat: 'all', div: dv }))];
   const cats = E.catsPresent(); if (cats.length > 1) cats.forEach((c) => screens.push({ cat: c, div: 'all' }));
@@ -79,7 +84,7 @@ export default function TvPage() {
       )}
       <div className="tvctl">
         <button type="button" onClick={() => { try { document.documentElement.requestFullscreen?.(); } catch { /* not supported */ } }}>Full screen</button>
-        <Link to={`/e/${slug}`}>Exit TV</Link>
+        <Link to={exitTo}>{exitLabel}</Link>
       </div>
     </div>
   );

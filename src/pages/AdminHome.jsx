@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { errText, isRealUser, supabase } from '../lib/supabase.js';
+import { Link, Navigate } from 'react-router-dom';
+import { isRealUser, supabase } from '../lib/supabase.js';
 import { Header, Loading, fmtDate, statusLabel, useSession } from '../components/ui.jsx';
 import { Help } from '../components/Guide.jsx';
 import { organiserHelp } from '../lib/helpContent.js';
 
 export default function AdminHome() {
-  const session = useSession(); const nav = useNavigate();
+  const session = useSession();
   const [clubs, setClubs] = useState(null); const [events, setEvents] = useState([]);
-  const [name, setName] = useState(''); const [loc, setLoc] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!isRealUser(session)) return;
@@ -24,11 +23,6 @@ export default function AdminHome() {
   if (session === undefined) return <Loading />;
   if (!isRealUser(session)) return <Navigate to="/login?next=/admin" replace />;
 
-  const create = async (e) => {
-    e.preventDefault(); setBusy(true); setErr('');
-    const { data, error } = await supabase.rpc('create_club', { p_name: name, p_location: loc || null });
-    setBusy(false); if (error) setErr(errText(error)); else nav(`/admin/club/${data}`);
-  };
 
   return (
     <>
@@ -58,25 +52,20 @@ export default function AdminHome() {
               <div className="card pad stack">
                 <h2>How it works</h2>
                 <ol className="howto">
-                  <li><b>Create your club</b><span>Below. You become the club owner.</span></li>
-                  <li><b>Add your course</b><span>The Seasons card loads in one tap.</span></li>
-                  <li><b>Create an event</b><span>Name, date, format and rules.</span></li>
+                  <li><b>Create your organisation</b><span>Your company, charity or club.</span></li>
+                  <li><b>Create an event</b><span>Name, date, course, format and rules.</span></li>
                   <li><b>Add players</b><span>Type them in or import a spreadsheet.</span></li>
                   <li><b>Send links</b><span>Each player gets a private scorecard link or QR code.</span></li>
-                  <li><b>Open scoring</b><span>Scores stream to the leaderboard and clubhouse TV.</span></li>
+                  <li><b>Pay and open scoring</b><span>Scores stream to the leaderboard and clubhouse TV.</span></li>
                 </ol>
                 <p className="note">Helping with someone else's event? Open the invite link they sent you instead. It brings you straight to that event.</p>
               </div>
             )}
-            <form className="card form" onSubmit={create}>
-              <h2>{clubs.length ? 'Add another club' : 'Create your club'}</h2>
-              <div className="grid2">
-                <label className="f">Club name<input required minLength={2} value={name} onChange={(e) => setName(e.target.value)} placeholder="Seasons Golf Club" /></label>
-                <label className="f">Town or area<input value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="Brits, North West" /></label>
-              </div>
-              {err && <div className="banner bad">{err}</div>}
-              <div><button className="btn" disabled={busy}>{busy ? 'Creating…' : 'Create club'}</button></div>
-            </form>
+<div className="card form">
+              <h2>{clubs.length ? 'Set up another event' : 'Set up your first event'}</h2>
+              <p className="note">Create your organisation and your event in a couple of minutes. Setting up is free; pay per event day when you're ready to open scoring.</p>
+              <div><Link className="btn" to="/start">Set up an event</Link></div>
+            </div>
           </>
         )}
       </div></main>

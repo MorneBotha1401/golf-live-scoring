@@ -7,7 +7,11 @@ import { initInstall } from './lib/install.js';
 
 initInstall();
 import { ToastProvider } from './components/ui.jsx';
-import Home from './pages/Home.jsx';
+import Landing from './pages/Landing.jsx';
+import Demo, { DemoTv } from './pages/Demo.jsx';
+import Legal from './pages/Legal.jsx';
+import Start from './pages/Start.jsx';
+import Platform from './pages/Platform.jsx';
 import Login from './pages/Login.jsx';
 import AdminHome from './pages/AdminHome.jsx';
 import ClubAdmin from './pages/ClubAdmin.jsx';
@@ -38,7 +42,14 @@ createRoot(document.getElementById('root')).render(
       <ToastProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Landing />} />
+            <Route path="/demo" element={<Demo />} />
+            <Route path="/demo/tv" element={<DemoTv />} />
+            <Route path="/start" element={<Start />} />
+            <Route path="/platform" element={<Platform />} />
+            <Route path="/terms" element={<Legal />} />
+            <Route path="/privacy" element={<Legal />} />
+            <Route path="/refunds" element={<Legal />} />
             <Route path="/login" element={<Login />} />
             <Route path="/admin" element={<AdminHome />} />
             <Route path="/admin/club/:clubId" element={<ClubAdmin />} />

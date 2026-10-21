@@ -13,6 +13,8 @@ import Leaderboard from '../components/Leaderboard.jsx';
 import Scorecards from '../components/Scorecards.jsx';
 import { Checklist, Help, NextStep, Tip, Tour, Welcome, seenTour, useOnboarding, useTour } from '../components/Guide.jsx';
 import { eventAdminHelp } from '../lib/helpContent.js';
+import { confirmPayment, paymentOptions, startCheckout } from '../lib/payments.js';
+import { BRAND, money } from '../lib/brand.js';
 
 const flag = { get: (k) => { try { return localStorage.getItem(k) === '1'; } catch { return false; } }, set: (k) => { try { localStorage.setItem(k, '1'); } catch { /* ignore */ } } };
 
@@ -41,6 +43,30 @@ export default function EventAdmin() {
   const mainSeen = !ob.welcome && !ob.tour && seenTour('eventadmin');
   const tabTour = useTour('eventadmin-' + tab, mainSeen && !!d.event && ['players', 'links', 'committee', 'board'].includes(tab));
   const [, bump] = useState(0);
+  const [settings, setSettings] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const loadPayments = () => supabase.from('payments').select('*').eq('event_id', eventId).order('created_at', { ascending: false }).then(({ data }) => setPayments(data || []));
+  useEffect(() => {
+    supabase.from('app_settings').select('price_cents,currency,free_mode').eq('id', 1).maybeSingle().then(({ data }) => setSettings(data || {}));
+    if (isRealUser(session)) loadPayments();
+  }, [eventId, session]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Back from the payment page: confirm with the payment provider and unlock straight away.
+  useEffect(() => {
+    if (!isRealUser(session)) return undefined;
+    const sp = new URLSearchParams(window.location.search);
+    const ref = sp.get('paid'); const cancelled = sp.get('cancelled');
+    const clean = () => { try { window.history.replaceState(null, '', window.location.pathname + window.location.hash); } catch { /* ignore */ } };
+    if (cancelled) { toast('Payment cancelled. You can pay whenever you\'re ready.'); clean(); return undefined; }
+    if (!ref) return undefined;
+    let tries = 0, on = true;
+    toast('Confirming your payment…');
+    const check = async () => {
+      try { const r = await confirmPayment(ref); if (r.paid) { if (!on) return; toast('Payment received. Scoring is unlocked.'); clean(); d.reload(); loadPayments(); return; } } catch { /* try again */ }
+      if (on && ++tries < 15) setTimeout(check, 2000); else if (on) { toast('Your payment is still being confirmed. This page updates by itself.'); clean(); }
+    };
+    check();
+    return () => { on = false; };
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (session === undefined || d.loading) return <Loading />;
   if (!isRealUser(session)) return <Navigate to={`/login?next=/admin/event/${eventId}`} replace />;
@@ -61,6 +87,14 @@ export default function EventAdmin() {
     { key: 'live', label: 'Open scoring on the day', hint: 'Until then the event is a private draft and nobody can enter scores.', done: ev.status !== 'draft', action: { label: 'Go to Setup', onClick: () => go('setup') } },
     { key: 'tv', label: 'Put the leaderboard on the clubhouse TV', hint: 'Open the TV link on the TV\'s browser or a laptop connected to it.', done: flag.get('tvOpened:' + ev.id), optional: true, action: { label: 'Open TV display', onClick: () => { flag.set('tvOpened:' + ev.id); bump((x) => x + 1); window.open(`/e/${ev.slug}/tv`, '_blank', 'noopener'); } } },
   ];
+  const free = !!settings?.free_mode || d.club?.plan === 'comp';
+  const paid = (ev.paid_days || 0) >= (ev.days || 1);
+  const billing = { free, paid, price: { cents: settings?.price_cents ?? BRAND.defaultPrice.cents, currency: settings?.currency || BRAND.defaultPrice.currency }, payments };
+  checklist.splice(checklist.findIndex((x) => x.key === 'live'), 0, {
+    key: 'pay', label: free ? 'Payment: none needed' : 'Pay for your event',
+    hint: free ? 'This event is free.' : `${money(billing.price.cents * (ev.days || 1), billing.price.currency)} for ${ev.days > 1 ? `${ev.days} event days` : 'the event day'}, any number of players. Unlocks scoring straight away.`,
+    done: free || paid, action: { label: 'Pay now', onClick: () => { go('setup'); setTimeout(() => document.getElementById('pay')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200); } },
+  });
   const markSent = () => { if (!sent) { flag.set('linksSent:' + ev.id); bump((x) => x + 1); } };
   const steps = [
     { target: '[data-tour="checklist"]', title: 'Follow the checklist', body: <p>The checklist shows what to do next and ticks itself off as you go. The highlighted step is the next one. It folds away once everything's done.</p>, before: () => go('setup') },
@@ -113,7 +147,7 @@ export default function EventAdmin() {
           { title: 'Check the format and rules', text: 'Setup tab: format, handicap allowance, divisions, countback.' },
           { title: 'Add the players', text: 'One by one, or import an Excel list. Give each four-ball a group number.' },
           { title: 'Send each player their link', text: 'Links & QR tab: WhatsApp, email or a printed QR sheet.' },
-          { title: 'Open scoring on the day', text: 'Until then it\'s a private draft.' },
+          { title: 'Pay and open scoring on the day', text: 'Setting up is free. Pay per event day when you\'re ready; until scoring opens it\'s a private draft.' },
           { title: 'Close scoring and share the results', text: 'PDF, image or text, then archive the event.' },
         ]} />
       <Tour steps={steps} open={ob.tour} onClose={ob.closeTour} />
@@ -122,7 +156,7 @@ export default function EventAdmin() {
         {tab !== 'board' && <div data-tour="checklist"><Checklist id={'event:' + ev.id} title="Get this event ready" items={checklist} intro="Work down the list. Steps tick themselves off as you complete them." /></div>}
         {next}
         {ev.status === 'draft' && tab !== 'setup' && <div className="banner warn spread"><span><b>Draft:</b> players can open their links but can't enter scores until you open scoring.</span><button type="button" className="btn small" onClick={() => go('setup')}>Go to Setup</button></div>}
-        {tab === 'setup' && <SetupTab {...{ d, E, ev, toast, isClubAdmin }} />}
+        {tab === 'setup' && <SetupTab {...{ d, E, ev, toast, isClubAdmin, billing }} />}
         {tab === 'brand' && <BrandTab {...{ ev, toast, reload: d.reload }} />}
         {tab === 'players' && <PlayersTab {...{ d, E, ev, toast, priv, loadPriv }} />}
         {tab === 'links' && <LinksTab {...{ d, E, ev, toast, priv, loadPriv, markSent }} />}
@@ -133,9 +167,57 @@ export default function EventAdmin() {
   );
 }
 
+/* ---------------- payment ---------------- */
+const shortDate = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
+function addDays(d, n) { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); }
+
+function PayCard({ ev, billing, toast }) {
+  const { free, paid, price, payments } = billing;
+  const [opts, setOpts] = useState(null);
+  const [busy, setBusy] = useState('');
+  const owed = Math.max(0, ev.days - (ev.paid_days || 0));
+  useEffect(() => { if (!free && owed > 0) paymentOptions().then(setOpts).catch(() => setOpts({ gateways: [] })); }, [free, owed]);
+  const done = payments.filter((p) => p.status === 'paid' || p.status === 'refunded');
+  const window_ = `${shortDate(addDays(ev.event_date, -1))} to ${shortDate(addDays(ev.event_date, ev.days))}`;
+  const pay = async (gw) => { setBusy(gw || 'any'); try { await startCheckout(ev.id, gw); } catch (e) { toast(e.message); setBusy(''); } };
+  if (free) return <div className="card form paycard paid" id="pay"><h2>No payment needed</h2><p>This event is free. You can open scoring whenever you're ready.</p></div>;
+  const unit = opts?.price?.cents ?? price.cents; const cur = opts?.price?.currency || price.currency;
+  return (
+    <div className={'card form paycard' + (paid ? ' paid' : '')} id="pay">
+      {paid ? (
+        <>
+          <h2>Paid · scoring unlocked</h2>
+          <p>Your event day pass{ev.days > 1 ? 'es cover' : ' covers'} {ev.days > 1 ? `all ${ev.days} days` : 'the event'}. Scoring can be opened from {window_}.</p>
+        </>
+      ) : (
+        <>
+          <h2>Pay for your event</h2>
+          <div className="spread">
+            <div><div className="amount">{money(unit * owed, cur)}</div><div className="note">{owed > 1 ? `${owed} event days × ${money(unit, cur)}` : 'One event day pass'}{ev.paid_days > 0 ? ` (${ev.paid_days} already paid)` : ''}</div></div>
+            <div className="btns">
+              {opts === null ? <button type="button" className="btn" disabled>Loading…</button>
+                : opts.gateways?.length ? opts.gateways.map((g, i) => (
+                  <button key={g.id} type="button" className={'btn' + (i ? ' ghost' : '')} disabled={!!busy} onClick={() => pay(g.id)}>
+                    {busy === g.id ? 'Opening secure checkout…' : i ? `Pay another way: ${g.label}` : `Pay ${money(g.currency === 'zar' ? (opts.price.zarCents * owed) : unit * owed, g.currency)}`}
+                  </button>))
+                : <span className="note">Online payment isn't switched on yet. Contact {BRAND.email}.</span>}
+            </div>
+          </div>
+          <p className="note">Unlimited players. Paying unlocks <b>Open scoring</b> straight away; scoring can be opened from {window_}. Secure checkout by card, Apple Pay or Google Pay, with a receipt by email.</p>
+        </>
+      )}
+      {done.length > 0 && (
+        <div className="tscroll"><table className="list"><thead><tr><th>Paid</th><th>Days</th><th>Amount</th><th>Status</th><th /></tr></thead><tbody>
+          {done.map((p) => <tr key={p.id}><td>{p.paid_at ? new Date(p.paid_at).toLocaleDateString('en-ZA') : '—'}</td><td>{p.days}</td><td>{money(p.amount_cents, p.currency)}</td><td>{p.status === 'refunded' ? 'Refunded' : p.provider === 'comp' ? 'Complimentary' : 'Paid'}</td><td>{p.receipt_url && <a href={p.receipt_url} target="_blank" rel="noreferrer">Receipt</a>}</td></tr>)}
+        </tbody></table></div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- setup ---------------- */
-function SetupTab({ d, E, ev, toast, isClubAdmin }) {
-  const [f, setF] = useState({ name: ev.name, event_date: ev.event_date, course_id: ev.course_id, self_register: ev.self_register, auto_approve: ev.auto_approve });
+function SetupTab({ d, E, ev, toast, isClubAdmin, billing }) {
+  const [f, setF] = useState({ name: ev.name, event_date: ev.event_date, days: ev.days || 1, course_id: ev.course_id, self_register: ev.self_register, auto_approve: ev.auto_approve });
   const [fs, setFs] = useState({ format: ev.format, settings: { ...DEFAULT_SETTINGS, ...ev.settings } });
   const [courses, setCourses] = useState([]); const [busy, setBusy] = useState(false); const [admins, setAdmins] = useState([]);
   useEffect(() => {
@@ -145,7 +227,7 @@ function SetupTab({ d, E, ev, toast, isClubAdmin }) {
   const hasScores = d.scores.length + d.teamScores.length > 0;
   const save = async () => {
     setBusy(true);
-    const { error } = await supabase.from('events').update({ ...f, name: f.name.trim(), format: fs.format, settings: { ...fs.settings, reviewed: true } }).eq('id', ev.id);
+    const { error } = await supabase.from('events').update({ ...f, days: +f.days, name: f.name.trim(), format: fs.format, settings: { ...fs.settings, reviewed: true } }).eq('id', ev.id);
     setBusy(false); if (error) toast(errText(error)); else { toast('Saved. The leaderboard has been recalculated.'); d.reload(); }
   };
   const status = async (s) => { const { error } = await supabase.from('events').update({ status: s }).eq('id', ev.id); if (error) toast(errText(error)); else { toast({ live: 'Scoring is open', finished: 'Scoring closed. Results are final.', archived: 'Moved to the archive', draft: 'Back to draft' }[s]); d.reload(); } };
@@ -154,9 +236,13 @@ function SetupTab({ d, E, ev, toast, isClubAdmin }) {
 
   return (
     <div className="stack">
+      <PayCard ev={ev} billing={billing} toast={toast} />
       <div className="card form" data-tour="status">
         <h2>Event status</h2>
-        {ev.status === 'draft' && <><p>Draft: players can open their links and check their details, but can't score yet. The public leaderboard is hidden.</p><div className="btns"><ConfirmButton className="btn" confirmText="Tap again to open scoring" onConfirm={() => status('live')}>Open scoring (go live)</ConfirmButton></div></>}
+        {ev.status === 'draft' && <><p>Draft: players can open their links and check their details, but can't score yet. The public leaderboard is hidden.</p><div className="btns">{billing.free || billing.paid
+          ? <ConfirmButton className="btn" confirmText="Tap again to open scoring" onConfirm={() => status('live')}>Open scoring (go live)</ConfirmButton>
+          : <button type="button" className="btn ghost" onClick={() => document.getElementById('pay')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>Pay to unlock scoring</button>}</div>
+          {!billing.free && <p className="note">Scoring can be opened from {shortDate(addDays(ev.event_date, -1))} to {shortDate(addDays(ev.event_date, ev.days))}.</p>}</>}
         {ev.status === 'live' && <><p>Live: players are scoring and the leaderboard is public.</p><div className="btns"><ConfirmButton className="btn" confirmText="Tap again to close scoring" onConfirm={() => status('finished')}>Close scoring and finalise</ConfirmButton><button type="button" className="btn ghost" onClick={() => status('draft')}>Back to draft</button></div></>}
         {ev.status === 'finished' && <><p>Finished: scores are locked for players. You can still correct scores in Committee.</p><div className="btns"><button type="button" className="btn ghost" onClick={() => status('live')}>Reopen scoring</button><button type="button" className="btn" onClick={() => status('archived')}>Move to archive</button></div></>}
         {ev.status === 'archived' && <><p>Archived: kept with full results in the club's archive.</p><div className="btns"><button type="button" className="btn ghost" onClick={() => status('finished')}>Restore</button></div></>}
@@ -166,10 +252,12 @@ function SetupTab({ d, E, ev, toast, isClubAdmin }) {
         <h2>Event details</h2>
         <label className="f">Tournament or golf day name<input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
         <div className="grid2">
-          <label className="f">Date<input type="date" value={f.event_date} onChange={(e) => setF({ ...f, event_date: e.target.value })} /></label>
+          <label className="f">Date (first day)<input type="date" value={f.event_date} disabled={hasScores} onChange={(e) => setF({ ...f, event_date: e.target.value })} /></label>
+          <label className="f">Days of play<select value={f.days} disabled={hasScores} onChange={(e) => setF({ ...f, days: +e.target.value })}>{[1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n} day{n > 1 ? 's' : ''}</option>)}</select></label>
           <label className="f">Course<select value={f.course_id} disabled={hasScores} onChange={(e) => setF({ ...f, course_id: e.target.value })}>{courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         </div>
-        {hasScores && <p className="note">The course can't change once scores have been entered.</p>}
+        {hasScores && <p className="note">The date, days and course can't change once scores have been entered.</p>}
+        {!billing.free && +f.days > (ev.paid_days || 0) && ev.paid_days > 0 && <p className="note">Adding days means paying for the extra days before scoring can open again.</p>}
         <fieldset><legend>Player registration</legend>
           <label className="chk"><input type="checkbox" checked={f.self_register} onChange={(e) => setF({ ...f, self_register: e.target.checked })} /> Let players register themselves from the event QR code</label>
           {f.self_register && <label className="chk"><input type="checkbox" checked={f.auto_approve} onChange={(e) => setF({ ...f, auto_approve: e.target.checked })} /> Approve them automatically (otherwise you approve each one under Players)</label>}
